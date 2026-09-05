@@ -34,6 +34,12 @@ struct PhotoGridView: View {
         switch libraryManager.authorizationStatus {
         case .notDetermined:
             requestAccessView
+        case .limited where libraryManager.assets.isEmpty:
+            // Choosing "Limit Access" and then picking zero photos in the
+            // follow-up picker lands here — access was granted, but to
+            // nothing. Without this case it looks identical to a bug: a
+            // blank grid with no error and no explanation.
+            noPhotosSelectedView
         case .authorized, .limited:
             gridView
         case .denied, .restricted:
@@ -65,6 +71,24 @@ struct PhotoGridView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
             Text("Photo access was denied. Enable it in Settings to see your camera roll here.")
+                .multilineTextAlignment(.center)
+                .padding(.horizontal)
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding()
+    }
+
+    private var noPhotosSelectedView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "photo.badge.exclamationmark")
+                .font(.system(size: 48))
+                .foregroundStyle(.secondary)
+            Text("You've limited this app to specific photos, but none are currently selected. Choose photos in Settings to see them here.")
                 .multilineTextAlignment(.center)
                 .padding(.horizontal)
             Button("Open Settings") {
