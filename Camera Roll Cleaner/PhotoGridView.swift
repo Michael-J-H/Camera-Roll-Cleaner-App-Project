@@ -102,12 +102,23 @@ struct PhotoGridView: View {
     }
 
     private var gridView: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 2) {
-                ForEach(libraryManager.assets, id: \.localIdentifier) { asset in
-                    PhotoThumbnailView(asset: asset, targetSize: CGSize(width: 150, height: 150))
-                        .aspectRatio(1, contentMode: .fit)
-                        .clipped()
+        // GeometryReader gives us the actual screen width so every cell can
+        // be locked to the exact same square size in points. Letting each
+        // cell size itself from its own photo (the old aspectRatio(_, .fit)
+        // approach) made cell size depend on that photo's own orientation —
+        // portrait, landscape, and older-camera aspect ratios each produced
+        // a slightly different size, which showed up as misaligned rows.
+        GeometryReader { geometry in
+            let spacing: CGFloat = 2
+            let cellSide = (geometry.size.width - spacing * 2) / 3
+
+            ScrollView {
+                LazyVGrid(columns: columns, spacing: spacing) {
+                    ForEach(libraryManager.assets, id: \.localIdentifier) { asset in
+                        PhotoThumbnailView(asset: asset, targetSize: CGSize(width: cellSide, height: cellSide))
+                            .frame(width: cellSide, height: cellSide)
+                            .clipped()
+                    }
                 }
             }
         }
