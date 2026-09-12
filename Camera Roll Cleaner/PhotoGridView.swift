@@ -23,6 +23,13 @@ struct PhotoGridView: View {
         NavigationStack {
             content
                 .navigationTitle("Camera Roll")
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        NavigationLink("Debug: Clustering") {
+                            ClusteringDebugView()
+                        }
+                    }
+                }
         }
         .onAppear {
             libraryManager.loadAssetsIfAuthorized()
