@@ -103,9 +103,18 @@ The actual planned UX:
       merged via PR #1 on GitHub. Note: iOS has no true "read-only" tier (see below), so the
       app requests `.readWrite` — but contains zero delete code, so this poses no more risk
       than originally planned.
-- [ ] On-device duplicate clustering (NEXT UP — see below for why this comes before chat UI)
-- [ ] Chat UI shell (basic text in/out)
-- [ ] Wire clustering + metadata search into chat (inline preview row, pop-out grid)
+- [x] On-device duplicate clustering — Vision feature-print similarity + timestamp +
+      location, tuned against a hand-audited real date range (similarity threshold raised
+      0.3 → 0.45 after auditing misses). Debug UI lets you drill into any cluster or the
+      unmatched-photos folder and view full-size photos with swipe. Two known v1
+      limitations documented directly in code (not fixed, deliberate): portrait/landscape
+      orientation mismatches, and same-background-but-content-changed cases (e.g. a person
+      walking into/out of frame) — see Decision Log and code comments in
+      `PhotoClusterEngine.swift` for the reasoning. Apple's `PHAssetCollection.fetchMoments`
+      was evaluated as a possible cross-check signal and rejected (see Decision Log).
+- [x] Chat UI shell (basic text in/out) — `ChatShellView.swift`, iMessage-style bubbles,
+      placeholder canned replies only, no real logic wired in yet.
+- [ ] Wire clustering + metadata search into chat (inline preview row, pop-out grid) — NEXT UP
 - [ ] Cloud AI integration for judgment calls
 - [ ] Write-access permission + review/confirm/delete flow
 

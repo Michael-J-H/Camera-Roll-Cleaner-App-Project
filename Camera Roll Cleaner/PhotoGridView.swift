@@ -24,6 +24,11 @@ struct PhotoGridView: View {
             content
                 .navigationTitle("Camera Roll")
                 .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        NavigationLink("Chat") {
+                            ChatShellView()
+                        }
+                    }
                     ToolbarItem(placement: .navigationBarTrailing) {
                         NavigationLink("Debug: Clustering") {
                             ClusteringDebugView()
