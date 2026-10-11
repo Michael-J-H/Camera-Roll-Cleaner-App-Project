@@ -356,24 +356,61 @@ private struct RangeCalendarSheet: View {
         }
     }
 
+    /// Start → End boxes, like a booking app, so it's obvious up front that
+    /// two dates are being picked. The box that the next tap will fill is
+    /// outlined. Display-only on purpose: tapping a box does nothing, since
+    /// letting it switch which date is being edited is the kind of
+    /// interaction that broke earlier calendars.
     private var selectionSummary: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if let start, let end {
-                Text(Self.rangeFormatter.string(from: start, to: end))
-                    .font(.title3.bold())
-                Text("Tap ✓ to use these dates, or tap a day to start over.")
-            } else if let start {
-                Text(start, format: .dateTime.day().month(.abbreviated).year())
-                    .font(.title3.bold())
-                Text("Now tap the last day — or tap ✓ for just this one day.")
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                dateBox("Start", date: start, isNext: start == nil || end != nil)
+                Image(systemName: "arrow.right")
+                    .foregroundStyle(.secondary)
+                dateBox("End", date: end, isNext: start != nil && end == nil)
+            }
+            Text(hint)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var hint: String {
+        if start != nil && end != nil {
+            return "Tap ✓ to use these dates, or tap a day to start over."
+        } else if start != nil {
+            return "Now tap the last day — or tap ✓ for just this one day."
+        } else {
+            return "Tap the first day, then the last day."
+        }
+    }
+
+    private func dateBox(_ label: String, date: Date?, isNext: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label.uppercased())
+                .font(.caption.bold())
+                .foregroundStyle(isNext ? Color.accentColor : Color.secondary)
+            if let date {
+                Text(date, format: .dateTime.day().month(.abbreviated).year())
+                    .font(.headline)
+                    .foregroundStyle(.primary)
             } else {
-                Text("Pick your dates")
-                    .font(.title3.bold())
-                Text("Tap the first day, then the last day.")
+                Text("Pick a day")
+                    .font(.headline)
+                    .foregroundStyle(.secondary)
             }
         }
-        .foregroundStyle(.primary)
-        .font(.subheadline)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(.secondarySystemBackground))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(isNext ? Color.accentColor : Color.clear, lineWidth: 2)
+        )
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: Header — Month and Year menus, plus ‹ › arrows
@@ -521,13 +558,6 @@ private struct RangeCalendarSheet: View {
         guard let date = calendar.date(byAdding: .month, value: months, to: shownMonth) else { return }
         shownMonth = min(date, thisMonth)
     }
-
-    private static let rangeFormatter: DateIntervalFormatter = {
-        let f = DateIntervalFormatter()
-        f.dateStyle = .medium
-        f.timeStyle = .none
-        return f
-    }()
 }
 
 // MARK: - The screen itself
