@@ -20,25 +20,11 @@ struct PhotoGridView: View {
     ]
 
     var body: some View {
-        NavigationStack {
-            content
-                .navigationTitle("Camera Roll")
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarLeading) {
-                        NavigationLink("Chat") {
-                            ChatShellView()
-                        }
-                    }
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        NavigationLink("Debug: Clustering") {
-                            ClusteringDebugView()
-                        }
-                    }
-                }
-        }
-        .onAppear {
-            libraryManager.loadAssetsIfAuthorized()
-        }
+        content
+            .navigationTitle("Camera Roll")
+            .onAppear {
+                libraryManager.loadAssetsIfAuthorized()
+            }
     }
 
     @ViewBuilder
@@ -138,5 +124,7 @@ struct PhotoGridView: View {
 }
 
 #Preview {
-    PhotoGridView()
+    NavigationStack {
+        PhotoGridView()
+    }
 }

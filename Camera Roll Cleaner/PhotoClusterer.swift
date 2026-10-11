@@ -15,9 +15,9 @@ final class PhotoClusterer: ObservableObject {
     @Published private(set) var isRunning = false
     @Published private(set) var result: ClusteringResult?
 
-    func run() async {
+    func run(in interval: DateInterval) async {
         isRunning = true
-        result = await PhotoClusterEngine.run()
+        result = await PhotoClusterEngine.run(in: interval)
         isRunning = false
     }
 }

@@ -19,7 +19,7 @@ struct ClusteringDebugView: View {
         List {
             Section {
                 Button {
-                    Task { await clusterer.run() }
+                    Task { await clusterer.run(in: PhotoClusterEngine.debugRange) }
                 } label: {
                     if clusterer.isRunning {
                         HStack {

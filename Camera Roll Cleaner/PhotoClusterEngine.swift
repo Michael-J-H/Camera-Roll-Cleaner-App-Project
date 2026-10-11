@@ -95,17 +95,18 @@ nonisolated enum PhotoClusterEngine {
     private static let closedEyeThreshold: Double = 0.2
     private static let workingImageSize = CGSize(width: 512, height: 512)
 
-    // TEMPORARY hardcoded test window (Sep 26 – Oct 4, 2025 inclusive, in
-    // the device's local calendar) — per current instructions, so results
-    // can be checked against a specific range of photos the developer
-    // remembers. Swap for a real date picker / "whole library" once the
-    // logic above is confirmed working — this constraint isn't permanent.
-    private static var testRangeStart: Date { dateAt(year: 2025, month: 9, day: 26) }
-    private static var testRangeEnd: Date { dateAt(year: 2025, month: 10, day: 5) } // exclusive, covers all of Oct 4
+    /// The fixed window ClusteringDebugView checks against (Sep 26 – Oct 4,
+    /// 2025 inclusive, in the device's local calendar) — kept as a named
+    /// constant now that `run` takes any interval, so the debug screen can
+    /// keep testing against the exact same known range it always has.
+    static let debugRange = DateInterval(
+        start: dateAt(year: 2025, month: 9, day: 26),
+        end: dateAt(year: 2025, month: 10, day: 5) // exclusive, covers all of Oct 4
+    )
 
-    static func run() async -> ClusteringResult {
-        let assets = fetchAssetsInTestRange()
-        print("[Clustering] \(assets.count) photos found between Sep 26 – Oct 4, 2025")
+    static func run(in interval: DateInterval) async -> ClusteringResult {
+        let assets = fetchAssets(in: interval)
+        print("[Clustering] \(assets.count) photos found in \(interval.start) – \(interval.end)")
 
         var candidates: [ClusterCandidate] = []
         var failedAssets: [FailedAsset] = []
@@ -248,12 +249,12 @@ nonisolated enum PhotoClusterEngine {
 
     // MARK: - Fetching
 
-    private static func fetchAssetsInTestRange() -> [PHAsset] {
+    private static func fetchAssets(in interval: DateInterval) -> [PHAsset] {
         let options = PHFetchOptions()
         options.predicate = NSPredicate(
             format: "creationDate >= %@ AND creationDate < %@",
-            testRangeStart as NSDate,
-            testRangeEnd as NSDate
+            interval.start as NSDate,
+            interval.end as NSDate
         )
         options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
         let result = PHAsset.fetchAssets(with: .image, options: options)
