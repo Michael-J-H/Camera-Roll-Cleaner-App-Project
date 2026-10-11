@@ -49,6 +49,14 @@ extension DateInterval {
 /// date detector, which follows the phone's region settings for day/month
 /// order.
 ///
+/// **It refuses rather than guesses.** Anything it can't place returns nil,
+/// and the chat says it couldn't pick out a date. In particular: words that
+/// are only sometimes dates ("may", "march", "fall", "spring") count only
+/// where a date makes sense; iOS's detector is only trusted with full
+/// numeric dates (left alone, it reads "Sunday", "tomorrow" or "3pm" as
+/// dates); and a period that hasn't started yet is refused, since there
+/// can't be photos from it.
+///
 /// This is a fixed set of rules, not real language understanding. Apple's
 /// on-device AI model was tried for that and removed — see the Decision Log
 /// in PROJECT_BRIEF.md. Whatever comes out, the chat reads it back for
@@ -60,13 +68,69 @@ extension DateInterval {
 /// Dec 2024 – Feb 2025; no year given means the most recent one that has
 /// already started.
 enum TypedDateParser {
+    enum Reading: Equatable {
+        case range(DateInterval)
+        /// Two sensible readings — the chat asks which one was meant
+        /// ("last Tuesday" mid-week; "winter 2024").
+        case either(DateInterval, DateInterval)
+        /// A broad period plus words it didn't understand ("my birthday in
+        /// 2024") — the period is only a fallback, so the chat asks rather
+        /// than quietly scanning the whole year.
+        case unsure(DateInterval)
+        /// A vague amount ("a few Tuesdays ago", "a while ago") — the chat
+        /// asks how far back rather than picking a number.
+        case vague
+        case notUnderstood
+    }
+
     /// - Parameter current: The range already being discussed, if any —
     ///   needed for "a week earlier" and the like.
-    static func parse(_ input: String, current: DateInterval? = nil, now: Date = .now, calendar: Calendar = .current) -> DateInterval? {
+    static func reading(of input: String, current: DateInterval? = nil, now: Date = .now, calendar: Calendar = .current) -> Reading {
         var scan = Scan(input.lowercased().replacingOccurrences(of: "\u{2019}", with: "'"))
+        dropAmbiguousWords(&scan)
 
+        if scan.peek(#"\b(?:a few|several|some|some time|sometime|a while|a bit|a little while)\s+(?:(?:days?|weeks?|months?|years?|"# + weekdayNames + #")s?\s+)?ago\b"#) != nil {
+            return .vague
+        }
+
+        // Only periods that have already started — there can't be photos
+        // from the future.
+        var options: [DateInterval] = []
+        for option in read(&scan, current: current, calendar: calendar, now: now)
+        where option.start <= now && !options.contains(option) {
+            options.append(option)
+        }
+        switch options.count {
+        case 0: return .notUnderstood
+        case 1:
+            let longerThanAWeek = calendar.dateComponents([.day], from: options[0].start, to: options[0].end).day ?? 0 > 7
+            return longerThanAWeek && !unknownWords(in: scan.text).isEmpty ? .unsure(options[0]) : .range(options[0])
+        default: return .either(options[0], options[1])
+        }
+    }
+
+    /// Everyday words that don't change the meaning of a date request
+    /// ("show me photos from …"). Anything else left over after reading
+    /// the dates is something the parser didn't understand.
+    private static let fillerWords: Set<String> = [
+        "a", "about", "all", "an", "and", "any", "around", "at", "be", "between", "can", "check", "clean",
+        "cleanup", "could", "date", "dates", "did", "do", "duplicate", "duplicates", "during", "entire",
+        "everything", "find", "for", "from", "full", "go", "i", "i'd", "i'm", "images", "in", "is", "it",
+        "just", "let's", "lets", "like", "look", "looking", "me", "my", "of", "on", "only", "our", "period",
+        "photo", "photos", "pic", "pics", "picture", "pictures", "please", "range", "scan", "see", "shots",
+        "show", "some", "taken", "that", "the", "these", "this", "those", "time", "to", "try", "up", "use",
+        "videos", "want", "was", "were", "whole", "with", "would", "year", "you",
+    ]
+
+    private static func unknownWords(in leftover: String) -> [String] {
+        leftover.components(separatedBy: CharacterSet.letters.union(CharacterSet(charactersIn: "'")).inverted)
+            .filter { $0.count > 1 && !fillerWords.contains($0) }
+    }
+
+    /// One reading, or two when a mention could fairly mean either.
+    private static func read(_ scan: inout Scan, current: DateInterval?, calendar: Calendar, now: Date) -> [DateInterval] {
         if let current, let shifted = shift(scan, current: current, calendar: calendar) {
-            return shifted
+            return [shifted]
         }
 
         let modifier = takeModifier(&scan)
@@ -76,16 +140,53 @@ enum TypedDateParser {
         // Leftover digits mean something was written that the rules above
         // don't recognize (most often a numbers-only date like "10/1/2025")
         // — let iOS's date detector read it instead of guessing.
-        let base: DateInterval?
+        var bases: [DateInterval?]
         if !mentions.isEmpty, !scan.hasLeftoverDigits {
-            base = combine(mentions, calendar: calendar)
+            bases = [combine(mentions, calendar: calendar)]
+            // An ambiguous mention gives a second reading, built the same way.
+            if let i = mentions.firstIndex(where: { $0.alternativeYear != nil || $0.alternative != nil }) {
+                var other = mentions
+                if let year = other[i].alternativeYear { other[i].year = year }
+                if let interval = other[i].alternative { other[i].kind = .fixed(interval) }
+                bases.append(combine(other, calendar: calendar))
+            }
         } else {
-            base = detectedDates(in: textWithoutModifier, calendar: calendar)
+            bases = [detectedDates(in: textWithoutModifier, calendar: calendar)]
         }
 
-        guard let base else { return nil }
-        guard let modifier else { return base }
-        return apply(modifier, to: base, calendar: calendar)
+        return bases.compactMap { base in
+            guard let base else { return nil }
+            guard let modifier else { return base }
+            return apply(modifier, to: base, calendar: calendar)
+        }
+    }
+
+    // MARK: - Words that are only sometimes dates
+
+    /// "May", "March", "fall" and "spring" are also ordinary words ("may I
+    /// see…", "march of the penguins", "fall photos"). They only count as
+    /// dates when something around them says so: a day or year next to them
+    /// ("May 2025", "March 3"), a date word before them ("in May", "this
+    /// fall", "first week of March"), a range ("May to July"), or being the
+    /// whole message ("May"). Otherwise they're blanked out before reading.
+    private static func dropAmbiguousWords(_ scan: inout Scan) {
+        let message = scan.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let datey = #"(?:in|of|during|from|since|until|till|through|thru|to|and|between|early|late|mid|this|last|before|after|around|-|–|—)\s+$"#
+        var searchFrom = 0
+        while let match = scan.peek(#"\b(may|march|mar|fall|spring)\b"#, from: searchFrom) {
+            let word = match[1]
+            let before = (scan.text as NSString).substring(to: match.location)
+            let after = (scan.text as NSString).substring(from: match.location + (word as NSString).length)
+            let keep = message == word
+                || after.range(of: #"^\.?\s*,?\s*(?:of\s+)?\d"#, options: .regularExpression) != nil
+                || after.range(of: #"^\s*(?:-|–|—|(?:to|through|thru|until|and)\b)"#, options: .regularExpression) != nil
+                || before.range(of: datey, options: .regularExpression) != nil
+            if keep {
+                searchFrom = match.location + (word as NSString).length
+            } else {
+                scan.blank(at: match.location, length: (word as NSString).length)
+            }
+        }
     }
 
     // MARK: - Moving the current range ("a week earlier")
@@ -125,6 +226,10 @@ enum TypedDateParser {
         case nthWeekend(Int?)
         case weekOf
         case weekendOf
+        /// "the Tuesday before/after …"
+        case adjacentWeekday(Int, before: Bool)
+        /// "first Monday of …" (counted from 0; nil = last)
+        case nthWeekday(Int?, weekday: Int)
     }
 
     private enum Direction { case before, after, around }
@@ -139,6 +244,15 @@ enum TypedDateParser {
 
     private static func takeModifier(_ scan: inout Scan) -> Modifier? {
         let ordinals = ["first": 0, "1st": 0, "second": 1, "2nd": 1, "third": 2, "3rd": 2, "fourth": 3, "4th": 3]
+
+        if let match = scan.take(#"\b(?:the\s+)?("# + weekdayNames + #")\s+(before|prior to|after|following)\s+"#),
+           let weekday = weekdayNumber(match[1]) {
+            return .adjacentWeekday(weekday, before: !["after", "following"].contains(match[2]))
+        }
+        if let match = scan.take(#"\b(first|1st|second|2nd|third|3rd|fourth|4th|last)\s+("# + weekdayNames + #")\s+"# + periodFollows),
+           let weekday = weekdayNumber(match[2]) {
+            return .nthWeekday(ordinals[match[1]], weekday: weekday)
+        }
 
         if let match = scan.take(#"\b(?:the\s+)?(?:"# + countPattern + #"\s+)?(days?|weeks?|months?|years?|weekend)\s+(before|prior to|leading up to|after|following|around)\s+"#) {
             let direction: Direction = match[3] == "around" ? .around : (["after", "following"].contains(match[3]) ? .after : .before)
@@ -231,6 +345,23 @@ enum TypedDateParser {
             // the phone's region settings use (Monday in most of Europe).
             return calendar.dateInterval(of: .weekOfYear, for: first)
 
+        case let .adjacentWeekday(weekday, before):
+            var day = before ? days(-1, from: first) : days(1, from: last)
+            while let d = day, calendar.component(.weekday, from: d) != weekday {
+                day = days(before ? -1 : 1, from: d)
+            }
+            return day.map { .wholeDays(from: $0, through: $0, calendar: calendar) }
+
+        case let .nthWeekday(index, weekday):
+            var matches: [Date] = []
+            var day: Date? = first
+            while let d = day, d <= last {
+                if calendar.component(.weekday, from: d) == weekday { matches.append(d) }
+                day = days(1, from: d)
+            }
+            let found = index.map { $0 < matches.count ? matches[$0] : nil } ?? matches.last
+            return found.map { .wholeDays(from: $0, through: $0, calendar: calendar) }
+
         case .weekendOf:
             // A weekend day means its own weekend; a weekday, the next one.
             let weekday = calendar.component(.weekday, from: first)
@@ -257,6 +388,12 @@ enum TypedDateParser {
         var year: Int?
         let location: Int
         var yearCameFromLaterMention = false
+        /// A second fair reading, which makes the chat ask: "winter 2024"
+        /// could be the winter starting or ending in 2024 (alternativeYear),
+        /// and mid-week "last Tuesday" could be this week's or last week's
+        /// (alternative).
+        var alternativeYear: Int?
+        var alternative: DateInterval?
 
         var needsYear: Bool {
             switch kind {
@@ -298,7 +435,10 @@ enum TypedDateParser {
         }
         while let match = scan.take(#"\b("# + seasonNames + #")\b(?:\s+(?:of\s+)?((?:19|20)\d{2}))?"#) {
             let start = ["spring": 3, "summer": 6, "autumn": 9, "fall": 9, "winter": 12][match[1]] ?? 3
-            mentions.append(Mention(kind: .season(startMonth: start), year: Int(match[2]), location: match.location))
+            var season = Mention(kind: .season(startMonth: start), year: Int(match[2]), location: match.location)
+            // Winter spans New Year, so "winter 2024" could be either side.
+            if start == 12, let year = season.year { season.alternativeYear = year - 1 }
+            mentions.append(season)
         }
         while let match = scan.take(#"\b"# + monthPattern + #"\.?\b"# + year), let month = monthNumber(match[1]) {
             mentions.append(Mention(kind: .month(month), year: Int(match[2]), location: match.location))
@@ -327,6 +467,53 @@ enum TypedDateParser {
         }
         func days(_ n: Int, from date: Date) -> Date? { calendar.date(byAdding: .day, value: n, to: date) }
 
+        // "2 Tuesdays ago" — counting back from the most recent Tuesday.
+        if let match = scan.take(#"\b"# + countPattern + #"\s+("# + weekdayNames + #")s?\s+ago\b"#),
+           let n = count(match[1]), let weekday = weekdayNumber(match[2]),
+           let recent = mostRecent(weekday, before: now, calendar: calendar),
+           let day = days(-7 * (n - 1), from: recent) {
+            add(.wholeDays(from: day, through: day, calendar: calendar), at: match.location)
+        }
+        // "3 days ago" = that day; "2 weeks ago" = that calendar week; and so on.
+        if let match = scan.take(#"\b"# + countPattern + #"\s+(days?|weeks?|months?|years?)\s+ago\b"#),
+           let n = count(match[1]), let unit = component(named: match[2]),
+           let then = calendar.date(byAdding: unit, value: -n, to: now) {
+            add(unit == .day ? .wholeDays(from: then, through: then, calendar: calendar)
+                             : calendar.dateInterval(of: unit, for: then), at: match.location)
+        }
+        // Weekdays. "Last Tuesday" mid-week could mean this week's or last
+        // week's, so both are offered; "this past Tuesday" means the most
+        // recent; "this Tuesday" is this week's; a bare "Tuesday" is the most
+        // recent one, today included. "Next Tuesday" is in the future, so it's
+        // read only to be refused.
+        if let match = scan.take(#"\b(this past|past|previous|last|this|next|on)?\s*\b("# + weekdayNames + #")\b"#),
+           let weekday = weekdayNumber(match[2]) {
+            switch match[1] {
+            case "next":
+                let day = mostRecent(weekday, before: now, calendar: calendar).flatMap { days(14, from: $0) }
+                add(day.map { .wholeDays(from: $0, through: $0, calendar: calendar) }, at: match.location)
+            case "this":
+                let todayWeekday = calendar.component(.weekday, from: now)
+                let offset = (weekday - calendar.firstWeekday + 7) % 7 - (todayWeekday - calendar.firstWeekday + 7) % 7
+                let day = days(offset, from: now)
+                add(day.map { .wholeDays(from: $0, through: $0, calendar: calendar) }, at: match.location)
+            case "last":
+                if let recent = mostRecent(weekday, before: now, calendar: calendar) {
+                    var mention = Mention(kind: .fixed(.wholeDays(from: recent, through: recent, calendar: calendar)), location: match.location)
+                    if calendar.isDate(recent, equalTo: now, toGranularity: .weekOfYear), let weekEarlier = days(-7, from: recent) {
+                        mention.alternative = .wholeDays(from: weekEarlier, through: weekEarlier, calendar: calendar)
+                    }
+                    found.append(mention)
+                }
+            case "this past", "past", "previous":
+                add(mostRecent(weekday, before: now, calendar: calendar).map { .wholeDays(from: $0, through: $0, calendar: calendar) },
+                    at: match.location)
+            default:
+                let day = calendar.component(.weekday, from: now) == weekday ? now : mostRecent(weekday, before: now, calendar: calendar)
+                add(day.map { .wholeDays(from: $0, through: $0, calendar: calendar) }, at: match.location)
+            }
+        }
+
         if let match = scan.take(#"\btoday\b"#) {
             add(.wholeDays(from: now, through: now, calendar: calendar), at: match.location)
         }
@@ -346,7 +533,7 @@ enum TypedDateParser {
         }
         // "this weekend" = Sat–Sun of this week; "last weekend" = the most
         // recent one that's over.
-        if let match = scan.take(#"\b(this|last|previous)\s+weekend\b"#) {
+        if let match = scan.take(#"\b(this past|past|this|last|previous)\s+weekend\b"#) {
             var sunday: Date?
             if match[1] == "this" {
                 let weekday = calendar.component(.weekday, from: now)
@@ -448,14 +635,19 @@ enum TypedDateParser {
 
     // MARK: - Numbers-only dates, via iOS's date detector
 
-    /// The detector hands back times of day (usually noon) rather than whole
-    /// days, so the earliest and latest dates it found are widened to cover
-    /// their full days.
+    /// Only full numeric dates (day, month and year: "10/1/2025",
+    /// "1.10.2025") are accepted from the detector — left alone it also reads
+    /// weekdays, "tomorrow" and times of day as dates, usually guessing
+    /// forward in time. The detector hands back times of day (usually noon)
+    /// rather than whole days, so the earliest and latest dates it found are
+    /// widened to cover their full days.
     private static func detectedDates(in text: String, calendar: Calendar) -> DateInterval? {
         guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue) else { return nil }
         let matches = detector.matches(in: text, range: NSRange(text.startIndex..., in: text))
         let spans = matches.compactMap { match -> (Date, Date)? in
-            guard let date = match.date else { return nil }
+            guard let range = Range(match.range, in: text),
+                  text[range].range(of: #"\d{1,4}[/.\-]\d{1,2}[/.\-]\d{2,4}"#, options: .regularExpression) != nil,
+                  let date = match.date else { return nil }
             return (date, date.addingTimeInterval(max(match.duration, 0)))
         }
         guard let first = spans.map(\.0).min(), let last = spans.map(\.1).max() else { return nil }
@@ -510,6 +702,22 @@ enum TypedDateParser {
 
     private static let seasonNames = "spring|summer|autumn|fall|winter"
 
+    private static let weekdayNames = "monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+
+    /// iOS's numbering: Sunday = 1 … Saturday = 7.
+    private static func weekdayNumber(_ name: String) -> Int? {
+        ["sunday": 1, "monday": 2, "tuesday": 3, "wednesday": 4, "thursday": 5, "friday": 6, "saturday": 7][name]
+    }
+
+    /// The latest such weekday strictly before today.
+    private static func mostRecent(_ weekday: Int, before now: Date, calendar: Calendar) -> Date? {
+        var day = calendar.date(byAdding: .day, value: -1, to: now)
+        while let d = day, calendar.component(.weekday, from: d) != weekday {
+            day = calendar.date(byAdding: .day, value: -1, to: d)
+        }
+        return day
+    }
+
     private static func monthNumber(_ name: String) -> Int? {
         ["jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
          "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12][String(name.prefix(3))]
@@ -558,11 +766,11 @@ private struct Scan {
         subscript(i: Int) -> String { groups[i] }
     }
 
-    /// Finds the first match without removing it.
-    func peek(_ pattern: String) -> Match? {
+    /// Finds the first match (at or after `from`) without removing it.
+    func peek(_ pattern: String, from start: Int = 0) -> Match? {
         let nsText = text as NSString
         guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: text, range: NSRange(location: 0, length: nsText.length)) else { return nil }
+              let match = regex.firstMatch(in: text, range: NSRange(location: start, length: nsText.length - start)) else { return nil }
         let groups = (0..<match.numberOfRanges).map { i -> String in
             let range = match.range(at: i)
             return range.location == NSNotFound ? "" : nsText.substring(with: range)
@@ -574,11 +782,14 @@ private struct Scan {
     /// else keeps its position (used to keep mentions in the order typed).
     mutating func take(_ pattern: String) -> Match? {
         guard let match = peek(pattern) else { return nil }
-        let length = (match[0] as NSString).length
-        text = (text as NSString).replacingCharacters(
-            in: NSRange(location: match.location, length: length),
-            with: String(repeating: " ", count: length))
+        blank(at: match.location, length: (match[0] as NSString).length)
         return match
+    }
+
+    mutating func blank(at location: Int, length: Int) {
+        text = (text as NSString).replacingCharacters(
+            in: NSRange(location: location, length: length),
+            with: String(repeating: " ", count: length))
     }
 
     var hasLeftoverDigits: Bool { text.range(of: #"\d"#, options: .regularExpression) != nil }

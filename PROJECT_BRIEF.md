@@ -18,17 +18,23 @@ gets added later, only when ready for TestFlight or App Store submission).
   Design the chat/review flow around this — e.g., "AI proposes a batch → user reviews →
   user taps delete → iOS confirms" — not around any illusion of full automation.
 - Reading the photo library requires the `NSPhotoLibraryUsageDescription` permission string
-  in Info.plist and a runtime permission prompt. Deleting requires a *separate* write-access
-  permission, requested later (see "Photo access strategy" below).
+  in Info.plist and a runtime permission prompt. iOS has only two photo access levels —
+  "add only" and "read and write" — so there is no read-only option: reading at all means
+  asking for read/write (see "Photo access strategy" below).
 
-## Photo access strategy (decided)
-Read and write access are being requested **separately, not together**:
-- **Now:** request read-only access only. This is all the current milestone (photo grid) needs.
-- **Later:** request write access only once the deletion feature is actually being built.
-This follows Apple's "least privilege" principle — ask for only what the current feature
-needs, when it needs it — and results in a cleaner permission-prompt experience for the user
-(they aren't asked to allow deletion before the app has shown them anything). Confirmed there
-is no performance difference either way; this is a privacy/UX choice only, not a technical one.
+## Photo access strategy (decided, revised)
+The original plan was to ask for read-only access now and a separate write permission later,
+following Apple's "least privilege" principle. That turned out not to be possible: iOS has no
+read-only tier (only "add only" and "read and write"), so the app asks for **read and write
+access once, up front** (`PHPhotoLibrary.requestAuthorization(for: .readWrite)` in
+`PhotoLibraryManager.swift`), and the user sees a single permission prompt.
+- **There will be no second permission prompt** at the deletion milestone — the app already
+  has the access level deletion needs.
+- **The safeguards are elsewhere instead:** the app contains no delete code until the
+  deletion milestone, and even then iOS shows its own confirmation dialog for every deletion
+  (see "Deletion is never silent" above), so nothing can be removed without the user's tap.
+- The user may choose "Limited Access" (only photos they pick) in the prompt; the app
+  already handles that, including the case of zero photos selected.
 
 ## Chat + photo review UX (decided)
 The existing `PhotoGridView` (raw scrolling grid, no dates, not tappable) was built purely as
@@ -100,9 +106,8 @@ The actual planned UX:
       real device, iPhone 16e, after working through a simulator first-boot issue)
 - [x] Project connected to GitHub (private repo, pushed via Claude Code + GitHub CLI)
 - [x] Photos framework integration — thumbnail grid, tested on real device (iPhone 16e),
-      merged via PR #1 on GitHub. Note: iOS has no true "read-only" tier (see below), so the
-      app requests `.readWrite` — but contains zero delete code, so this poses no more risk
-      than originally planned.
+      merged via PR #1 on GitHub. The app requests `.readWrite` because iOS has no read-only
+      tier (see "Photo access strategy") — it contains zero delete code so far.
 - [x] On-device duplicate clustering — Vision feature-print similarity + timestamp +
       location, tuned against a hand-audited real date range (similarity threshold raised
       0.3 → 0.45 after auditing misses). Debug UI lets you drill into any cluster or the
@@ -129,13 +134,15 @@ The actual planned UX:
 - [x] Typed dates fully handled, tested on device — the parser reads dates broad-to-narrow
       (pieces like year/month/holiday/day, then one modifier like "two weeks before" or
       "first weekend of"), so free combinations work: holidays, "two weeks before …",
-      "week of …", "first two weeks of …", seasons, "a week earlier", and more. Checked
-      against 91 phrases with known answers (`DateParserChecks/check.sh`). Apple's
+      "week of …", "first two weeks of …", seasons, weekdays, "a week earlier", and more; asks
+      when a request has two readings and refuses rather than guesses. Checked
+      against 159 phrases with known answers (`DateParserChecks/check.sh`). Apple's
       on-device model was tried for this and removed (see Decision Log). The chat's message
       box now grows to 5 lines so longer requests are readable. **Date step is done.**
 - [ ] In-chat preview row (one best photo per duplicate set) + pop-out grid — NEXT UP
 - [ ] Cloud AI integration for judgment calls
-- [ ] Write-access permission + review/confirm/delete flow
+- [ ] Review/confirm/delete flow (no new permission needed — read/write is already granted;
+      iOS confirms every deletion itself)
 
 ## Decision log
 - **Apple's Moments API rejected as a session-grouping signal.** Checked
@@ -188,11 +195,33 @@ The actual planned UX:
   no pattern covered a lone holiday. Numbers-only dates ("10/1/2025") go to iOS's date
   detector, which uses the phone's region for day/month order. "A week earlier"-style
   changes move the range already being discussed. Same answer every time, works on every
-  iPhone, and checked on the Mac against a fixed list of phrases with known answers (64
-  everyday phrases plus 27 combinations) — re-run it after any change with
-  `DateParserChecks/check.sh` (prints "All phrases match" if nothing changed). Conventions
-  (all shown in the confirmation step before any scan): a weekend is Sat–Sun; "first week
-  of October" is Oct 1–7; "week of Nov 5" is the calendar week containing it; "two weeks
+  iPhone, and checked on the Mac against a fixed list of phrases with known answers (159
+  phrases: everyday ones, combinations, weekdays, and refusal/ambiguity cases) — re-run it after any
+  change with `DateParserChecks/check.sh` (prints "All phrases match" if nothing changed).
+  **It refuses rather than guesses:** anything it can't place gets "I couldn't pick out a
+  date" plus the calendar option. Specifically: "may", "march", "fall" and "spring" only
+  count as dates in a date-like position ("in May", "May 2025", "this fall", "May to July")
+  — not in "may I see…" or "fall photos"; iOS's date detector is only trusted with full
+  numeric dates (left alone it read "Sunday" and "tomorrow" as future dates and "3pm" as
+  today); and any period that hasn't started yet is refused ("next Tuesday", "Christmas
+  2026"). Personal events without a date ("my birthday", "our Paris trip") are refused —
+  that kind of free-form request is a job for the later AI milestone. **If a request mixes
+  words it doesn't understand with a broad period** ("my birthday in 2024", "summer
+  vacation"), it doesn't silently scan the whole period: it says it isn't sure and offers
+  the period as a button, or asks for exact dates. ("Photos from…", "show me…" and similar
+  filler don't count.) At any point, "new dates", "change dates", "start over" or "never
+  mind" go back to choosing dates, so a question can never leave the user stuck.
+  **It asks when a request genuinely has two readings,** with a button for each:
+  "last Tuesday" mid-week (this week's or the week before's) and "winter 2024" (the winter
+  ending in 2024 or starting in it). **It asks "how far back?"** for vague amounts ("a few
+  Tuesdays ago", "a while ago") instead of picking a number.
+  **Where to stop:** a phrase is only worth supporting if people would realistically type
+  it to find photos *and* it maps to one clear period (or a choice of two). Weekdays are
+  supported: "Tuesday" / "this past Tuesday" (most recent), "2 Tuesdays ago", "the Tuesday
+  before Christmas 2025", "first Monday of March 2025"; as are "3 days ago" (that day),
+  "2 weeks ago" (that calendar week), "a month ago" (that calendar month).
+  Conventions (all shown in the confirmation step before any scan): a weekend is Sat–Sun;
+  "first week of October" is Oct 1–7; "week of Nov 5" is the calendar week containing it; "two weeks
   before Christmas" is Dec 11–24; winter 2024 is Dec 2024 – Feb 2025; no year given means
   the most recent one that has already started.
 - **Claude API key will live behind a small backend relay, not in the app.** An API key

@@ -18,9 +18,25 @@ enum ConversationStage: Equatable {
     case awaitingDateEntryMethod   // greeting shown; waiting for type-vs-calendar, or a typed date
     case awaitingTypedDates        // user chose to type
     case awaitingPickedDates       // user chose the calendar
+    case choosingBetween([DateInterval])  // "last Tuesday" — which one? (buttons)
     case confirmingDates(DateInterval)
     case clustering
     case showingResults
+}
+
+/// Recognizes asking to pick different dates ("new dates", "start over")
+/// at any point in the conversation — so the chat never leaves the user
+/// stuck answering a question they no longer care about.
+enum ChangeDatesRequest {
+    private static let phrases: Set<String> = [
+        "new dates", "change dates", "change the dates", "different dates", "other dates",
+        "start over", "restart", "never mind", "nevermind", "go back", "change date", "new date",
+    ]
+
+    static func matches(_ input: String) -> Bool {
+        let cleaned = input.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        return phrases.contains(cleaned)
+    }
 }
 
 /// Loose match on common ways of typing "yes". Only used as a convenience at

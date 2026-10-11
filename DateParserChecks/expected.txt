@@ -17,7 +17,7 @@ first week of october                                    1 – 7 Oct 2026
 My birthday, week of november 5th for the year 2025      3 – 9 Nov 2025
 week of Christmas 2025                                   22 – 28 Dec 2025
 summer 2024                                              1 Jun – 31 Aug 2024
-winter 2024                                              1 Dec 2024 – 28 Feb 2025
+winter 2024                                              ASKS: 1 Dec 2024 – 28 Feb 2025  OR  1 Dec 2023 – 29 Feb 2024
 winter                                                   1 Dec 2025 – 28 Feb 2026
 fall 2025                                                1 Sep – 30 Nov 2025
 this summer                                              1 Jun – 31 Aug 2026
@@ -67,7 +67,7 @@ the week after Easter 2025                               21 – 27 Apr 2025
 the weekend before Christmas 2025                        20 – 21 Dec 2025
 the weekend after Easter 2024                            6 – 7 Apr 2024
 first two weeks of summer 2025                           1 – 14 Jun 2025
-last week of winter 2024                                 22 – 28 Feb 2025
+last week of winter 2024                                 ASKS: 22 – 28 Feb 2025  OR  23 – 29 Feb 2024
 first 10 days of last month                              1 – 10 Sep 2026
 second week of last month                                8 – 14 Sep 2026
 the week before Halloween 2025                           24 – 30 Oct 2025
@@ -89,3 +89,71 @@ last weekend                                             3 – 4 Oct 2026
 this weekend                                             10 – 11 Oct 2026
 the weekend before                                       — (not understood)
 march 32 2025                                            — (not understood)
+my birthday                                              — (not understood)
+on my birthday                                           — (not understood)
+photos from my birthday                                  — (not understood)
+my wedding                                               — (not understood)
+when we went to Paris                                    — (not understood)
+a while ago                                              — (asks how far back)
+recently                                                 — (not understood)
+march of the penguins                                    — (not understood)
+may I see the photos                                     — (not understood)
+fall photos                                              — (not understood)
+spring cleaning                                          — (not understood)
+the 5th                                                  — (not understood)
+Sunday                                                   11 Oct 2026
+last Tuesday                                             ASKS: 6 Oct 2026  OR  29 Sep 2026
+next week                                                — (not understood)
+tomorrow                                                 — (not understood)
+around 3pm                                               — (not understood)
+at 10.30                                                 — (not understood)
+weekend                                                  — (not understood)
+a week                                                   — (not understood)
+Christmas 2026                                           — (not understood)
+the 3 days after New Year's 2027                         — (not understood)
+may                                                      1 – 31 May 2026
+in may                                                   1 – 31 May 2026
+May to July 2025                                         1 May – 31 Jul 2025
+march 3                                                  3 Mar 2026
+first week of march                                      1 – 7 Mar 2026
+this fall                                                1 Sep – 30 Nov 2026
+fall 2025                                                1 Sep – 30 Nov 2025
+spring 2024                                              1 Mar – 31 May 2024
+my kid's birthday party in may                           ASKS (unsure, offers): 1 – 31 May 2026
+my birthday is november 5                                5 Nov 2025
+1.10.2025                                                1 Oct 2025
+this past Tuesday                                        6 Oct 2026
+past Tuesday                                             6 Oct 2026
+on Tuesday                                               6 Oct 2026
+Tuesday                                                  6 Oct 2026
+Saturday                                                 10 Oct 2026
+this Tuesday                                             6 Oct 2026
+this Saturday                                            10 Oct 2026
+next Tuesday                                             — (not understood)
+last Monday                                              ASKS: 5 Oct 2026  OR  28 Sep 2026
+2 Tuesdays ago                                           29 Sep 2026
+three Fridays ago                                        25 Sep 2026
+a few Tuesdays ago                                       — (asks how far back)
+several weeks ago                                        — (asks how far back)
+some time ago                                            — (asks how far back)
+3 days ago                                               8 Oct 2026
+2 weeks ago                                              21 – 27 Sep 2026
+a month ago                                              1 – 30 Sep 2026
+a year ago                                               1 Jan – 31 Dec 2025
+a couple of weeks ago                                    21 – 27 Sep 2026
+the Tuesday before Christmas 2025                        23 Dec 2025
+the Saturday after Easter 2024                           6 Apr 2024
+first Monday of March 2025                               3 Mar 2025
+last Friday of October 2025                              31 Oct 2025
+My birthday in 2024                                      ASKS (unsure, offers): 1 Jan – 31 Dec 2024
+summer vacation                                          ASKS (unsure, offers): 1 Jun – 31 Aug 2026
+my kid's birthday party in may                           ASKS (unsure, offers): 1 – 31 May 2026
+photos from October 2025                                 1 – 31 Oct 2025
+show me pictures from last month                         1 – 30 Sep 2026
+Our trip in March 2025                                   ASKS (unsure, offers): 1 – 31 Mar 2025
+my birthday, week of november 5th for the year 2025      3 – 9 Nov 2025
+duplicates from the whole year 2025                      1 Jan – 31 Dec 2025
+second Sunday of May 2025                                11 May 2025
+this past weekend                                        3 – 4 Oct 2026
+winter                                                   1 Dec 2025 – 28 Feb 2026
+winter 2025                                              ASKS: 1 Dec 2025 – 28 Feb 2026  OR  1 Dec 2024 – 28 Feb 2025

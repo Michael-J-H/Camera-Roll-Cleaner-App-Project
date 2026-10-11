@@ -26,6 +26,7 @@ struct ChatMessage: Identifiable {
         case dateEntryChoice                                       // "type it or use my calendar?" buttons
         case datePicker                                             // "Open calendar" button (the calendar itself is a sheet)
         case confirmationChoice                                     // "want me to go ahead?" Yes / Change dates
+        case rangeChoice([DateInterval])                            // "which did you mean?" one button per reading
         case clusterResults(ClusteringResult, dateRange: DateInterval) // tappable results summary
     }
 
@@ -96,6 +97,14 @@ final class ChatViewModel: ObservableObject {
         confirmDates(interval)
     }
 
+    /// Called when the user taps one of the readings offered for an
+    /// ambiguous request. Ignored unless the chat is still waiting on that
+    /// choice, so an old set of buttons can't jump back in later.
+    func chooseRange(_ interval: DateInterval) {
+        guard case .choosingBetween(let options) = stage, options.contains(interval) else { return }
+        confirmDates(interval)
+    }
+
     /// Called when the user taps "Change dates" at the confirmation step.
     /// Re-shows the original choice rather than silently resetting, so the
     /// conversation reads as a normal back-and-forth, not a jump cut.
@@ -113,57 +122,57 @@ final class ChatViewModel: ObservableObject {
         handleTyped(trimmed)
     }
 
-    /// Every stage gets a real response here — an explicit switch instead
-    /// of a single guarded case, so typing at an unexpected moment (e.g.
-    /// while the calendar picker is showing) still gets a sensible reply
-    /// instead of silently doing nothing.
+    /// Every stage gets a real response here, so typing at an unexpected
+    /// moment (e.g. while the calendar is showing) still gets a sensible
+    /// reply instead of silently doing nothing. Typing a new range at any
+    /// point ("actually, November 2025") switches to it, just as it would in
+    /// conversation — no need to find the "Change dates" button first.
     private func handleTyped(_ text: String) {
-        switch stage {
-        case .awaitingDateEntryMethod, .awaitingTypedDates, .awaitingPickedDates:
-            interpretDates(text) { [self] interval in
-                guard let interval else {
-                    append(.assistant, .text("I couldn't pick out a date there. Try something like \"Oct 1 to Oct 4, 2026\", \"October 2026\", or \"last month\" — or tap below to use the calendar instead."))
-                    append(.assistant, .dateEntryChoice)
-                    stage = .awaitingDateEntryMethod
-                    return
-                }
-                confirmDates(interval)
-            }
-
-        // Typing a new range here ("actually, November 2025") switches to
-        // it, just as it would in conversation — no need to find the
-        // "Change dates" button first.
-        case .confirmingDates:
-            if AffirmativeReply.matches(text) {
-                Task { await confirmAndRunClustering() }
-            } else {
-                interpretDates(text) { [self] interval in
-                    if let interval {
-                        confirmDates(interval)
-                    } else {
-                        append(.assistant, .text("Just let me know — tap below, or type \"yes\" to go ahead. You can also type a different date range, or a change like \"a week earlier\"."))
-                    }
-                }
-            }
-
-        case .clustering:
+        if stage == .clustering {
             append(.assistant, .text("Still scanning — one moment."))
+            return
+        }
+        if case .confirmingDates = stage, AffirmativeReply.matches(text) {
+            Task { await confirmAndRunClustering() }
+            return
+        }
+        if ChangeDatesRequest.matches(text) {
+            restartDateEntry()
+            return
+        }
 
-        case .showingResults:
-            interpretDates(text) { [self] interval in
-                if let interval {
-                    confirmDates(interval)
-                } else {
-                    append(.assistant, .text("That's everything from this scan. To look at a different stretch of time, just type a new date range — like \"November 2025\", \"last month\", or \"a week earlier\"."))
-                }
+        // currentRange lets follow-ups like "a week earlier" adjust it.
+        switch TypedDateParser.reading(of: text, current: currentRange) {
+        case .range(let interval):
+            confirmDates(interval)
+
+        case .either(let first, let second):
+            stage = .choosingBetween([first, second])
+            append(.assistant, .text("\"\(text)\" could mean either of these — which did you mean?"))
+            append(.assistant, .rangeChoice([first, second]))
+
+        case .unsure(let interval):
+            stage = .choosingBetween([interval])
+            append(.assistant, .text("I'm not sure when \"\(text)\" was, so all I can go on is \(Self.describe(interval)). Want me to look at all of that, or tell me the exact dates?"))
+            append(.assistant, .rangeChoice([interval]))
+
+        case .vague:
+            append(.assistant, .text("How far back? Give me a number — like \"3 Tuesdays ago\" or \"2 weeks ago\" — or a date, or tap below to use the calendar."))
+            append(.assistant, .dateEntryChoice)
+            stage = .awaitingDateEntryMethod
+
+        case .notUnderstood:
+            switch stage {
+            case .confirmingDates:
+                append(.assistant, .text("Just let me know — tap below, or type \"yes\" to go ahead. You can also type a different date range, or a change like \"a week earlier\"."))
+            case .showingResults:
+                append(.assistant, .text("That's everything from this scan. To look at a different stretch of time, just type a new date range — like \"November 2025\", \"last month\", or \"a week earlier\"."))
+            default:
+                append(.assistant, .text("I couldn't pick out a date there. Try something like \"Oct 1 to Oct 4, 2026\", \"October 2026\", or \"last month\" — or tap below to use the calendar instead."))
+                append(.assistant, .dateEntryChoice)
+                stage = .awaitingDateEntryMethod
             }
         }
-    }
-
-    /// Reads typed text as a date range, passing along the range already
-    /// being discussed so follow-ups like "a week earlier" can adjust it.
-    private func interpretDates(_ text: String, then handle: (DateInterval?) -> Void) {
-        handle(TypedDateParser.parse(text, current: currentRange))
     }
 
     // MARK: - Flow
@@ -208,9 +217,14 @@ final class ChatViewModel: ObservableObject {
 
     /// Ranges end at midnight *after* the last day (see
     /// `DateInterval.wholeDays`), so step back a moment before displaying —
-    /// otherwise all of October would read as "Oct 1 – Nov 1".
-    private static func describe(_ interval: DateInterval) -> String {
-        rangeFormatter.string(from: interval.start, to: interval.end.addingTimeInterval(-1))
+    /// otherwise all of October would read as "Oct 1 – Nov 1". A single day
+    /// includes its weekday ("Tue, Oct 6, 2026"), which matters most when
+    /// the request was a weekday.
+    static func describe(_ interval: DateInterval) -> String {
+        if Calendar.current.isDate(interval.start, inSameDayAs: interval.lastDay) {
+            return interval.start.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day().year())
+        }
+        return rangeFormatter.string(from: interval.start, to: interval.lastDay)
     }
 
     private static let rangeFormatter: DateIntervalFormatter = {
@@ -261,6 +275,14 @@ struct ChatBubbleView: View {
                 viewModel.openCalendar()
             } label: {
                 Label("Open calendar", systemImage: "calendar")
+            }
+            .buttonStyle(.bordered)
+
+        case .rangeChoice(let options):
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(options, id: \.self) { option in
+                    Button(ChatViewModel.describe(option)) { viewModel.chooseRange(option) }
+                }
             }
             .buttonStyle(.bordered)
 

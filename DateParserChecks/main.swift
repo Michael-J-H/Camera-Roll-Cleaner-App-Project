@@ -39,8 +39,36 @@ let combinations: [String] = ["first weekend of summer 2024", "the week after Ea
  "Easter to Christmas 2025", "first month of 2025", "last 3 months of 2025", "the day after Thanksgiving 2025",
  "may 2024", "10/1/2025", "two weeks before 12/25/2025", "last weekend", "this weekend", "the weekend before", "march 32 2025",]
 
-for (t, c) in cases + combinations.map({ ($0, nil) }) {
-  let r = TypedDateParser.parse(t, current: c, now: now, calendar: cal)
-  let res = r.map { f.string(from: $0.start, to: $0.end.addingTimeInterval(-1)) } ?? "— (not understood)"
+// Things it must refuse ("not understood") rather than guess at, plus the
+// legitimate uses of words that are only sometimes dates.
+let refusals: [String] = [
+ "my birthday", "on my birthday", "photos from my birthday", "my wedding", "when we went to Paris",
+ "a while ago", "recently", "march of the penguins", "may I see the photos", "fall photos", "spring cleaning",
+ "the 5th", "Sunday", "last Tuesday", "next week", "tomorrow", "around 3pm", "at 10.30", "weekend", "a week",
+ "Christmas 2026", "the 3 days after New Year's 2027",
+ "may", "in may", "May to July 2025", "march 3", "first week of march", "this fall", "fall 2025", "spring 2024",
+ "my kid's birthday party in may", "my birthday is november 5", "1.10.2025",
+]
+
+// Weekdays, "… ago", and things it should ask about. (Pinned "today",
+// Oct 11 2026, is a Sunday.)
+let weekdays: [String] = [
+ "this past Tuesday", "past Tuesday", "on Tuesday", "Tuesday", "Saturday", "this Tuesday", "this Saturday", "next Tuesday",
+ "last Monday", "2 Tuesdays ago", "three Fridays ago", "a few Tuesdays ago", "several weeks ago", "some time ago",
+ "3 days ago", "2 weeks ago", "a month ago", "a year ago", "a couple of weeks ago",
+ "the Tuesday before Christmas 2025", "the Saturday after Easter 2024", "first Monday of March 2025",
+ "last Friday of October 2025", "My birthday in 2024", "summer vacation", "my kid's birthday party in may", "photos from October 2025", "show me pictures from last month", "Our trip in March 2025", "my birthday, week of november 5th for the year 2025", "duplicates from the whole year 2025", "second Sunday of May 2025", "this past weekend", "winter", "winter 2025",
+]
+
+for (t, c) in cases + (combinations + refusals + weekdays).map({ ($0, nil) }) {
+  func show(_ r: DateInterval) -> String { f.string(from: r.start, to: r.end.addingTimeInterval(-1)) }
+  let res: String
+  switch TypedDateParser.reading(of: t, current: c, now: now, calendar: cal) {
+  case .range(let r): res = show(r)
+  case .either(let a, let b): res = "ASKS: " + show(a) + "  OR  " + show(b)
+  case .unsure(let r): res = "ASKS (unsure, offers): " + show(r)
+  case .vague: res = "— (asks how far back)"
+  case .notUnderstood: res = "— (not understood)"
+  }
   print((t + (c == nil ? "" : "  [current: Oct 1–4 2025]")).padding(toLength: 56, withPad: " ", startingAt: 0), res)
 }
