@@ -43,6 +43,9 @@ final class ChatViewModel: ObservableObject {
     @Published var draftText: String = ""
     @Published private(set) var stage: ConversationStage = .awaitingDateEntryMethod
     @Published var isShowingCalendar = false
+    /// The range most recently read back to the user, so a follow-up like
+    /// "a week earlier" has something to adjust.
+    private var currentRange: DateInterval?
 
     init() {
         showGreeting()
@@ -117,13 +120,15 @@ final class ChatViewModel: ObservableObject {
     private func handleTyped(_ text: String) {
         switch stage {
         case .awaitingDateEntryMethod, .awaitingTypedDates, .awaitingPickedDates:
-            guard let interval = TypedDateParser.parse(text) else {
-                append(.assistant, .text("I couldn't pick out a date there. Try something like \"Oct 1 to Oct 4, 2026\", \"October 2026\", or \"last month\" — or tap below to use the calendar instead."))
-                append(.assistant, .dateEntryChoice)
-                stage = .awaitingDateEntryMethod
-                return
+            interpretDates(text) { [self] interval in
+                guard let interval else {
+                    append(.assistant, .text("I couldn't pick out a date there. Try something like \"Oct 1 to Oct 4, 2026\", \"October 2026\", or \"last month\" — or tap below to use the calendar instead."))
+                    append(.assistant, .dateEntryChoice)
+                    stage = .awaitingDateEntryMethod
+                    return
+                }
+                confirmDates(interval)
             }
-            confirmDates(interval)
 
         // Typing a new range here ("actually, November 2025") switches to
         // it, just as it would in conversation — no need to find the
@@ -131,22 +136,34 @@ final class ChatViewModel: ObservableObject {
         case .confirmingDates:
             if AffirmativeReply.matches(text) {
                 Task { await confirmAndRunClustering() }
-            } else if let interval = TypedDateParser.parse(text) {
-                confirmDates(interval)
             } else {
-                append(.assistant, .text("Just let me know — tap below, or type \"yes\" to go ahead. You can also type a different date range."))
+                interpretDates(text) { [self] interval in
+                    if let interval {
+                        confirmDates(interval)
+                    } else {
+                        append(.assistant, .text("Just let me know — tap below, or type \"yes\" to go ahead. You can also type a different date range, or a change like \"a week earlier\"."))
+                    }
+                }
             }
 
         case .clustering:
             append(.assistant, .text("Still scanning — one moment."))
 
         case .showingResults:
-            if let interval = TypedDateParser.parse(text) {
-                confirmDates(interval)
-            } else {
-                append(.assistant, .text("That's everything from this scan. To look at a different stretch of time, just type a new date range — like \"November 2025\" or \"last month\"."))
+            interpretDates(text) { [self] interval in
+                if let interval {
+                    confirmDates(interval)
+                } else {
+                    append(.assistant, .text("That's everything from this scan. To look at a different stretch of time, just type a new date range — like \"November 2025\", \"last month\", or \"a week earlier\"."))
+                }
             }
         }
+    }
+
+    /// Reads typed text as a date range, passing along the range already
+    /// being discussed so follow-ups like "a week earlier" can adjust it.
+    private func interpretDates(_ text: String, then handle: (DateInterval?) -> Void) {
+        handle(TypedDateParser.parse(text, current: currentRange))
     }
 
     // MARK: - Flow
@@ -156,6 +173,7 @@ final class ChatViewModel: ObservableObject {
     /// of photos.
     private func confirmDates(_ interval: DateInterval) {
         stage = .confirmingDates(interval)
+        currentRange = interval
         let formatted = Self.describe(interval)
         append(.assistant, .text("Got it — I'm looking at \(formatted). Want me to go ahead?"))
         append(.assistant, .confirmationChoice)
@@ -590,7 +608,10 @@ struct ChatShellView: View {
                 Divider()
 
                 HStack {
-                    TextField("Message", text: $viewModel.draftText)
+                    // Grows to show up to 5 lines (then scrolls), like Messages,
+                    // so a longer request can be read back before sending.
+                    TextField("Message", text: $viewModel.draftText, axis: .vertical)
+                        .lineLimit(1...5)
                         .textFieldStyle(.roundedBorder)
                     Button("Send") { viewModel.sendDraft() }
                         .disabled(viewModel.draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

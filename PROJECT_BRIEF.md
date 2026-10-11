@@ -126,11 +126,11 @@ The actual planned UX:
         Decision Log for why it ended up this way.
       All ranges cover whole days (midnight to midnight) — an earlier version could start
       or end mid-day and silently skip photos.
-- [ ] Smarter date understanding via Apple's on-device model — NEXT UP (see Decision Log).
-      Goal: the date step is fully done before moving on, e.g. understanding "a week
-      earlier" or "the two weeks before Christmas 2025", with the current typed-date
-      patterns kept as the fallback.
-- [ ] In-chat preview row (one best photo per duplicate set) + pop-out grid
+- [x] More date phrasings, tested on the Mac — holidays, "two weeks before …", "week of
+      …", "first weekend of …", seasons, and "a week earlier"-style adjustments. Apple's
+      on-device model was tried for this and removed (see Decision Log). The chat's
+      message box now grows to 5 lines so longer requests are readable.
+- [ ] In-chat preview row (one best photo per duplicate set) + pop-out grid — NEXT UP
 - [ ] Cloud AI integration for judgment calls
 - [ ] Write-access permission + review/confirm/delete flow
 
@@ -158,13 +158,30 @@ The actual planned UX:
   year-only text like "October 2025" or "2025", and returns times of day (often noon)
   rather than whole days. So month/year and relative phrases are handled by our own
   patterns, and everything is widened to whole days.
-- **Apple's on-device model chosen for understanding free-form date requests.** Apple's
-  Foundation Models framework (the on-device model behind Apple Intelligence, iOS 26+)
-  is free, offline and private, and turning a sentence into a date range is a small,
-  well-suited job for it. Claude was considered but would add per-message cost, need a
-  network connection, and need a backend relay (below) — and the cost guardrails reserve
-  cloud AI for photo judgment, not general chat. Limitation: only works where Apple
-  Intelligence is available and turned on, so the hand-written patterns stay as fallback.
+- **Apple's on-device model tried for understanding typed dates, then removed (Oct 2026).**
+  Apple's Foundation Models framework (the on-device model behind Apple Intelligence) was
+  picked because it's free, offline and private, and Claude would need the backend relay
+  (below) plus per-message cost. In testing it handled easy phrases ("October 2025",
+  "summer 2024") but failed exactly the hard ones it was there for: asked for dates
+  directly, it answered "two weeks before Christmas 2025" with Dec 24 – Jan 7 (after,
+  not before); asked only to *describe* the period so the app could do the counting, it
+  named today instead of Christmas as the reference day, and read "past two weeks" as
+  2 days. It also only runs when Apple Intelligence is on, which switched off twice
+  during testing without the developer knowing why. Replaced by extending the
+  hand-written patterns (see next entry). Could be revisited later — or Claude used for
+  truly free-form requests once the relay exists.
+- **Typed dates are read by hand-written patterns, in a fixed order** (`TypedDateParser.swift`).
+  Covers: N days/weeks/months before/after/around a date or holiday (Christmas, Christmas
+  Eve, New Year's, New Year's Eve, Easter, Halloween, Valentine's, US Thanksgiving);
+  moving the current range ("a week earlier"); first/last N days, weeks or months of a
+  month or year ("first two weeks of October 2025"); first/second/…/last week or weekend
+  of a month; "week of [date]"; a holiday on its own ("Easter 2024" = that day); seasons; relative-to-today phrases; months and years; and
+  specific days via iOS's date detector. Same answer every time, works on every iPhone,
+  and every phrase can be tested on the Mac without the phone. Conventions chosen (all
+  shown to the user in the confirmation step before any scan): a weekend is Sat–Sun;
+  "first week of October" is Oct 1–7; "week of Nov 5" is the calendar week containing it;
+  "two weeks before Christmas" is Dec 11–24; winter 2024 is Dec 2024 – Feb 2025; no year
+  given means the most recent one that has already happened.
 - **Claude API key will live behind a small backend relay, not in the app.** An API key
   built into an app can be extracted, so the shipping app will call a small server of
   ours (e.g. a Cloudflare Worker / serverless function) that holds the key and forwards
