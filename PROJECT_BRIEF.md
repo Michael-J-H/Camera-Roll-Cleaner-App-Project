@@ -126,10 +126,13 @@ The actual planned UX:
         Decision Log for why it ended up this way.
       All ranges cover whole days (midnight to midnight) — an earlier version could start
       or end mid-day and silently skip photos.
-- [x] More date phrasings, tested on the Mac — holidays, "two weeks before …", "week of
-      …", "first weekend of …", seasons, and "a week earlier"-style adjustments. Apple's
-      on-device model was tried for this and removed (see Decision Log). The chat's
-      message box now grows to 5 lines so longer requests are readable.
+- [x] Typed dates fully handled, tested on device — the parser reads dates broad-to-narrow
+      (pieces like year/month/holiday/day, then one modifier like "two weeks before" or
+      "first weekend of"), so free combinations work: holidays, "two weeks before …",
+      "week of …", "first two weeks of …", seasons, "a week earlier", and more. Checked
+      against 91 phrases with known answers (`DateParserChecks/check.sh`). Apple's
+      on-device model was tried for this and removed (see Decision Log). The chat's message
+      box now grows to 5 lines so longer requests are readable. **Date step is done.**
 - [ ] In-chat preview row (one best photo per duplicate set) + pop-out grid — NEXT UP
 - [ ] Cloud AI integration for judgment calls
 - [ ] Write-access permission + review/confirm/delete flow
@@ -170,18 +173,28 @@ The actual planned UX:
   during testing without the developer knowing why. Replaced by extending the
   hand-written patterns (see next entry). Could be revisited later — or Claude used for
   truly free-form requests once the relay exists.
-- **Typed dates are read by hand-written patterns, in a fixed order** (`TypedDateParser.swift`).
-  Covers: N days/weeks/months before/after/around a date or holiday (Christmas, Christmas
-  Eve, New Year's, New Year's Eve, Easter, Halloween, Valentine's, US Thanksgiving);
-  moving the current range ("a week earlier"); first/last N days, weeks or months of a
-  month or year ("first two weeks of October 2025"); first/second/…/last week or weekend
-  of a month; "week of [date]"; a holiday on its own ("Easter 2024" = that day); seasons; relative-to-today phrases; months and years; and
-  specific days via iOS's date detector. Same answer every time, works on every iPhone,
-  and every phrase can be tested on the Mac without the phone. Conventions chosen (all
-  shown to the user in the confirmation step before any scan): a weekend is Sat–Sun;
-  "first week of October" is Oct 1–7; "week of Nov 5" is the calendar week containing it;
-  "two weeks before Christmas" is Dec 11–24; winter 2024 is Dec 2024 – Feb 2025; no year
-  given means the most recent one that has already happened.
+- **Typed dates are read broad-to-narrow, by hand-written rules** (`TypedDateParser.swift`).
+  The parser first picks out the *pieces* — a year, month, season, holiday (Christmas,
+  Christmas Eve, New Year's, New Year's Eve, Easter, Halloween, Valentine's, US
+  Thanksgiving), specific day or run of days, a period relative to today ("last month",
+  "past two weeks") — plus at most one *modifier* ("two weeks before …", "first 10 days
+  of …", "second weekend of …", "week of …"). Then it combines them: a year only says which
+  year the narrower pieces are in ("Easter 2024" = Easter *in* 2024, not all of 2024),
+  the narrowest pieces define the period, several make a range ("October to December
+  2025"), and the modifier is applied last. Because pieces combine freely, combinations
+  nobody wrote a rule for still work ("first weekend of summer 2024", "the week after
+  Easter 2025"). This replaced an earlier ordered checklist of whole-phrase patterns,
+  where the first match won — that design misread "Easter 2024" as all of 2024 because
+  no pattern covered a lone holiday. Numbers-only dates ("10/1/2025") go to iOS's date
+  detector, which uses the phone's region for day/month order. "A week earlier"-style
+  changes move the range already being discussed. Same answer every time, works on every
+  iPhone, and checked on the Mac against a fixed list of phrases with known answers (64
+  everyday phrases plus 27 combinations) — re-run it after any change with
+  `DateParserChecks/check.sh` (prints "All phrases match" if nothing changed). Conventions
+  (all shown in the confirmation step before any scan): a weekend is Sat–Sun; "first week
+  of October" is Oct 1–7; "week of Nov 5" is the calendar week containing it; "two weeks
+  before Christmas" is Dec 11–24; winter 2024 is Dec 2024 – Feb 2025; no year given means
+  the most recent one that has already started.
 - **Claude API key will live behind a small backend relay, not in the app.** An API key
   built into an app can be extracted, so the shipping app will call a small server of
   ours (e.g. a Cloudflare Worker / serverless function) that holds the key and forwards
