@@ -114,7 +114,23 @@ The actual planned UX:
       was evaluated as a possible cross-check signal and rejected (see Decision Log).
 - [x] Chat UI shell (basic text in/out) — `ChatShellView.swift`, iMessage-style bubbles,
       placeholder canned replies only, no real logic wired in yet.
-- [ ] Wire clustering + metadata search into chat (inline preview row, pop-out grid) — NEXT UP
+- [x] Date-range selection wired into chat, tested on device — the chat is now the app's
+      home screen and runs: pick a date range → confirm → run clustering on that range →
+      see the duplicate sets found. Two ways to give the range:
+      - **Typed** (`TypedDateParser` in `ChatConversationFlow.swift`): month/year phrases
+        ("October 2025", "Sep - Nov 2025"), relative phrases ("last month", "past two
+        weeks"), and specific days ("Oct 1 to Oct 4, 2025"). A new range can be typed at
+        the confirm step or after a scan to switch to it.
+      - **Calendar** (`RangeCalendarSheet` in `ChatShellView.swift`): one range calendar
+        in a sheet — first tap = start, second tap = end, Start → End boxes on top. See
+        Decision Log for why it ended up this way.
+      All ranges cover whole days (midnight to midnight) — an earlier version could start
+      or end mid-day and silently skip photos.
+- [ ] Smarter date understanding via Apple's on-device model — NEXT UP (see Decision Log).
+      Goal: the date step is fully done before moving on, e.g. understanding "a week
+      earlier" or "the two weeks before Christmas 2025", with the current typed-date
+      patterns kept as the fallback.
+- [ ] In-chat preview row (one best photo per duplicate set) + pop-out grid
 - [ ] Cloud AI integration for judgment calls
 - [ ] Write-access permission + review/confirm/delete flow
 
@@ -126,6 +142,36 @@ The actual planned UX:
   Moment spanning 6 hours across an entire visit to Cortina d'Ampezzo), not by individual
   stop/shot. Too coarse-grained to help with near-duplicate detection, which needs
   second-by-second, meter-by-meter precision.
+- **Calendar ended up as a single range calendar, built by hand.** Six designs were tried.
+  The first five all worked in the simulator but broke on the real phone: two pop-up
+  pickers in a chat bubble (taps went to the wrong picker), a full calendar in a chat
+  bubble (the chat's scrolling stole swipes), the same in a sheet (the calendar reset
+  itself mid-use), a Calendar-app-style Starts/Ends form (closed early, or couldn't get
+  back from the month/year wheel), and a custom calendar inside that form (Ends month
+  couldn't change). Common causes: calendars placed inside scrolling lists or forms, and
+  Apple's built-in calendar hiding the days behind its month/year wheel. The working
+  version is a plain one-calendar range picker (like hotel/flight booking apps) with
+  Month/Year menus, nothing scrolling around it, and only ✓ confirming. Lesson: for this
+  app, on-device testing is the real check for UI — simulator passes weren't reliable.
+- **Date phrases are parsed by hand, not just with iOS's date detector.** The built-in
+  detector (the one that makes dates tappable in Messages) doesn't recognize month- or
+  year-only text like "October 2025" or "2025", and returns times of day (often noon)
+  rather than whole days. So month/year and relative phrases are handled by our own
+  patterns, and everything is widened to whole days.
+- **Apple's on-device model chosen for understanding free-form date requests.** Apple's
+  Foundation Models framework (the on-device model behind Apple Intelligence, iOS 26+)
+  is free, offline and private, and turning a sentence into a date range is a small,
+  well-suited job for it. Claude was considered but would add per-message cost, need a
+  network connection, and need a backend relay (below) — and the cost guardrails reserve
+  cloud AI for photo judgment, not general chat. Limitation: only works where Apple
+  Intelligence is available and turned on, so the hand-written patterns stay as fallback.
+- **Claude API key will live behind a small backend relay, not in the app.** An API key
+  built into an app can be extracted, so the shipping app will call a small server of
+  ours (e.g. a Cloudflare Worker / serverless function) that holds the key and forwards
+  requests. The relay also needs abuse protection — Apple's App Attest to confirm requests
+  come from the real app, plus per-user rate limits. Planned as the first task of the
+  cloud AI milestone; required before TestFlight/App Store. For development on the
+  developer's own phone only, a local, never-committed key is acceptable.
 
 ## Notes for Claude Code
 The developer (project owner) is not a coder. Prioritize:
@@ -135,6 +181,9 @@ The developer (project owner) is not a coder. Prioritize:
   choice or writing code a particular way — don't let optional stylistic choices read as if
   they were mandatory, and vice versa.
 - Small, testable milestones over large batches of untested code.
+- **The developer tests UI changes on their own iPhone.** Claude Code should confirm the
+  project builds and give a short test checklist, not drive the simulator. Commit each
+  known-good state before tweaking further, so it can be rolled back.
 - If an explanation would benefit from a slower, teaching-style walkthrough, it's fine to keep
   the in-tool explanation brief and note that the developer will ask their Claude.ai chat for
   a deeper explanation separately — the two are used together deliberately.
