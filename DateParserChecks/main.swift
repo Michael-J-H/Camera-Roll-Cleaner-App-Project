@@ -57,7 +57,7 @@ let weekdays: [String] = [
  "last Monday", "2 Tuesdays ago", "three Fridays ago", "a few Tuesdays ago", "several weeks ago", "some time ago",
  "3 days ago", "2 weeks ago", "a month ago", "a year ago", "a couple of weeks ago",
  "the Tuesday before Christmas 2025", "the Saturday after Easter 2024", "first Monday of March 2025",
- "last Friday of October 2025", "My birthday in 2024", "summer vacation", "my kid's birthday party in may", "photos from October 2025", "show me pictures from last month", "Our trip in March 2025", "my birthday, week of november 5th for the year 2025", "duplicates from the whole year 2025", "second Sunday of May 2025", "this past weekend", "winter", "winter 2025",
+ "last Friday of October 2025", "My birthday in 2024", "summer vacation", "my kid's birthday party in may", "photos from October 2025", "show me pictures from last month", "Our trip in March 2025", "my birthday, week of november 5th for the year 2025", "duplicates from the whole year 2025", "Sorry, I meant September 26 to October 4 2025", "actually make it October 2025", "no wait, I meant last month", "oops, I meant summer 2024 instead", "how about October 2025?", "let's do the first two weeks of March 2025 instead", "sorry, my birthday in 2024", "Let’s search September 26 to October 4 2025", "let's search October 2025", "can you go through the first week of March 2025", "review October to December 2025", "our trip from Oct 1 to Oct 4 2025", "the wedding weekend of June 14 2025", "second Sunday of May 2025", "this past weekend", "winter", "winter 2025",
 ]
 
 for (t, c) in cases + (combinations + refusals + weekdays).map({ ($0, nil) }) {

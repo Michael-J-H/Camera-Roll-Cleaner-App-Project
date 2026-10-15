@@ -95,24 +95,33 @@ enum TypedDateParser {
 
         // Only periods that have already started — there can't be photos
         // from the future.
+        let (readings, onlyBroad) = read(&scan, current: current, calendar: calendar, now: now)
         var options: [DateInterval] = []
-        for option in read(&scan, current: current, calendar: calendar, now: now)
-        where option.start <= now && !options.contains(option) {
+        for option in readings where option.start <= now && !options.contains(option) {
             options.append(option)
         }
         switch options.count {
         case 0: return .notUnderstood
         case 1:
-            let longerThanAWeek = calendar.dateComponents([.day], from: options[0].start, to: options[0].end).day ?? 0 > 7
-            return longerThanAWeek && !unknownWords(in: scan.text).isEmpty ? .unsure(options[0]) : .range(options[0])
+            // Only a lone month, season or year was given, alongside words it
+            // didn't understand ("my birthday in 2024") — the period is just
+            // a backdrop for something it can't place, so ask. Specific dates
+            // ("Let's search Sep 26 to Oct 4 2025") never ask, whatever
+            // other words are around them.
+            return onlyBroad && !unknownWords(in: scan.text).isEmpty ? .unsure(options[0]) : .range(options[0])
         default: return .either(options[0], options[1])
         }
     }
 
-    /// Everyday words that don't change the meaning of a date request
-    /// ("show me photos from …"). Anything else left over after reading
-    /// the dates is something the parser didn't understand.
+    /// Everyday words that don't change the meaning of a date request —
+    /// "show me photos from …", and conversational corrections like "sorry,
+    /// I meant …" or "actually, make it …". Anything else left over after
+    /// reading the dates is something the parser didn't understand.
     private static let fillerWords: Set<String> = [
+        "browse", "get", "pull", "review", "search", "searching", "through", "up",
+        "actually", "ah", "change", "do", "go", "hm", "hmm", "how", "instead", "it's", "let", "make",
+        "mean", "meant", "no", "nope", "oh", "ok", "okay", "oops", "rather", "right", "should", "so",
+        "sorry", "switch", "than", "then", "typo", "uh", "um", "wait", "we", "well", "what", "yes", "yeah",
         "a", "about", "all", "an", "and", "any", "around", "at", "be", "between", "can", "check", "clean",
         "cleanup", "could", "date", "dates", "did", "do", "duplicate", "duplicates", "during", "entire",
         "everything", "find", "for", "from", "full", "go", "i", "i'd", "i'm", "images", "in", "is", "it",
@@ -127,10 +136,11 @@ enum TypedDateParser {
             .filter { $0.count > 1 && !fillerWords.contains($0) }
     }
 
-    /// One reading, or two when a mention could fairly mean either.
-    private static func read(_ scan: inout Scan, current: DateInterval?, calendar: Calendar, now: Date) -> [DateInterval] {
+    /// One reading, or two when a mention could fairly mean either — plus
+    /// whether the only date information was a lone month, season or year.
+    private static func read(_ scan: inout Scan, current: DateInterval?, calendar: Calendar, now: Date) -> ([DateInterval], onlyBroad: Bool) {
         if let current, let shifted = shift(scan, current: current, calendar: calendar) {
-            return [shifted]
+            return ([shifted], false)
         }
 
         let modifier = takeModifier(&scan)
@@ -154,11 +164,13 @@ enum TypedDateParser {
             bases = [detectedDates(in: textWithoutModifier, calendar: calendar)]
         }
 
-        return bases.compactMap { base in
+        let readings = bases.compactMap { base -> DateInterval? in
             guard let base else { return nil }
             guard let modifier else { return base }
             return apply(modifier, to: base, calendar: calendar)
         }
+        let onlyBroad = modifier == nil && mentions.count == 1 && mentions[0].isBroad
+        return (readings, onlyBroad)
     }
 
     // MARK: - Words that are only sometimes dates
@@ -394,6 +406,15 @@ enum TypedDateParser {
         /// (alternative).
         var alternativeYear: Int?
         var alternative: DateInterval?
+
+        /// A whole month, season or year — the kind of period that's often
+        /// just a backdrop for something more specific.
+        var isBroad: Bool {
+            switch kind {
+            case .year, .month, .season: return true
+            default: return false
+            }
+        }
 
         var needsYear: Bool {
             switch kind {

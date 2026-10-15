@@ -136,10 +136,17 @@ The actual planned UX:
       "first weekend of"), so free combinations work: holidays, "two weeks before …",
       "week of …", "first two weeks of …", seasons, weekdays, "a week earlier", and more; asks
       when a request has two readings and refuses rather than guesses. Checked
-      against 159 phrases with known answers (`DateParserChecks/check.sh`). Apple's
+      against 172 phrases with known answers (`DateParserChecks/check.sh`). Apple's
       on-device model was tried for this and removed (see Decision Log). The chat's message
       box now grows to 5 lines so longer requests are readable. **Date step is done.**
-- [ ] In-chat preview row (one best photo per duplicate set) + pop-out grid — NEXT UP
+- [x] In-chat preview row + pop-out grid, tested on device — after a scan the chat shows
+      "N duplicate sets · N photos" and a sideways row with each set's best shot (with a
+      photo-count badge), full width rather than in a bubble (`DuplicateSetsRow.swift`). All
+      sets show at once, to check it's the right trip; a "See all" grid can be added if very
+      large scans feel unwieldy. Tapping a set opens all its photos as a sheet (✕ or swipe
+      down to close) — a sheet rather than a pushed screen, because a navigation link inside
+      the chat's message list left the chat frozen after coming back. The chat stays
+      anchored to the bottom when sizes change.
 - [ ] Cloud AI integration for judgment calls
 - [ ] Review/confirm/delete flow (no new permission needed — read/write is already granted;
       iOS confirms every deletion itself)
@@ -195,7 +202,7 @@ The actual planned UX:
   no pattern covered a lone holiday. Numbers-only dates ("10/1/2025") go to iOS's date
   detector, which uses the phone's region for day/month order. "A week earlier"-style
   changes move the range already being discussed. Same answer every time, works on every
-  iPhone, and checked on the Mac against a fixed list of phrases with known answers (159
+  iPhone, and checked on the Mac against a fixed list of phrases with known answers (172
   phrases: everyday ones, combinations, weekdays, and refusal/ambiguity cases) — re-run it after any
   change with `DateParserChecks/check.sh` (prints "All phrases match" if nothing changed).
   **It refuses rather than guesses:** anything it can't place gets "I couldn't pick out a
@@ -205,11 +212,20 @@ The actual planned UX:
   numeric dates (left alone it read "Sunday" and "tomorrow" as future dates and "3pm" as
   today); and any period that hasn't started yet is refused ("next Tuesday", "Christmas
   2026"). Personal events without a date ("my birthday", "our Paris trip") are refused —
-  that kind of free-form request is a job for the later AI milestone. **If a request mixes
-  words it doesn't understand with a broad period** ("my birthday in 2024", "summer
-  vacation"), it doesn't silently scan the whole period: it says it isn't sure and offers
-  the period as a button, or asks for exact dates. ("Photos from…", "show me…" and similar
-  filler don't count.) At any point, "new dates", "change dates", "start over" or "never
+  that kind of free-form request is a job for the later AI milestone. **Guiding principle — listen for the
+  dates, not the sentence.** Like following a conversation in a language you're still
+  learning: you seize on the part that answers your question (the yes/no, the date) and let
+  the rest wash past. So when a message contains a specific date or range, the surrounding
+  words are ignored entirely, however they're phrased. The wording only matters when the
+  dates alone don't pin down a period. **If the only date given is a broad
+  period** — a lone month, season or year — **alongside words it doesn't understand** ("my
+  birthday in 2024", "summer vacation", "our trip in March 2025"), it doesn't silently scan
+  the whole period: it says it isn't sure and offers the period as a button, or asks for
+  exact dates. Specific dates never trigger this, whatever words surround them ("Let's
+  search Sep 26 to Oct 4 2025", "the wedding weekend of June 14 2025"). (An earlier version
+  asked whenever *any* unrecognized word appeared next to a long period, which misfired on
+  everyday wording like "sorry, I meant…" and "let's search…" — a word list can't keep up.)
+  At any point, "new dates", "change dates", "start over" or "never
   mind" go back to choosing dates, so a question can never leave the user stuck.
   **It asks when a request genuinely has two readings,** with a button for each:
   "last Tuesday" mid-week (this week's or the week before's) and "winter 2024" (the winter

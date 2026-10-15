@@ -27,7 +27,7 @@ struct ChatMessage: Identifiable {
         case datePicker                                             // "Open calendar" button (the calendar itself is a sheet)
         case confirmationChoice                                     // "want me to go ahead?" Yes / Change dates
         case rangeChoice([DateInterval])                            // "which did you mean?" one button per reading
-        case clusterResults(ClusteringResult, dateRange: DateInterval) // tappable results summary
+        case clusterResults(ClusteringResult, dateRange: DateInterval) // row of one photo per duplicate set
     }
 
     let id = UUID()
@@ -203,7 +203,7 @@ final class ChatViewModel: ObservableObject {
             append(.assistant, .text("""
             I looked through \(result.totalScanned) photos from \(formatted) and found \
             \(result.duplicateClusters.count) set\(result.duplicateClusters.count == 1 ? "" : "s") of duplicates. \
-            Want to look through them?
+            Here's the best shot from each — swipe through to check it's the right stretch of time.
             """))
             append(.assistant, .clusterResults(result, dateRange: interval))
         }
@@ -243,6 +243,16 @@ struct ChatBubbleView: View {
     @ObservedObject var viewModel: ChatViewModel
 
     var body: some View {
+        // Scan results are photos, shown full width like images in a chat
+        // app rather than squeezed into a grey bubble.
+        if case .clusterResults(let result, _) = message.content {
+            DuplicateSetsRow(result: result)
+        } else {
+            bubble
+        }
+    }
+
+    private var bubble: some View {
         HStack {
             if message.sender == .user { Spacer(minLength: 40) }
 
@@ -294,35 +304,8 @@ struct ChatBubbleView: View {
                     .buttonStyle(.bordered)
             }
 
-        case .clusterResults(let result, let dateRange):
-            NavigationLink {
-                ClusterResultsView(result: result, dateRange: dateRange)
-            } label: {
-                clusterResultsPreview(result)
-            }
-            .buttonStyle(.plain)
-        }
-    }
-
-    private func clusterResultsPreview(_ result: ClusteringResult) -> some View {
-        HStack(spacing: 10) {
-            if let firstCluster = result.duplicateClusters.first {
-                PhotoThumbnailView(asset: firstCluster.representative.asset, targetSize: CGSize(width: 44, height: 44))
-                    .frame(width: 44, height: 44)
-                    .clipped()
-                    .cornerRadius(6)
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(result.duplicateClusters.count) duplicate set\(result.duplicateClusters.count == 1 ? "" : "s")")
-                    .font(.subheadline.bold())
-                Text("Tap to review")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 8)
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        case .clusterResults:
+            EmptyView() // drawn by DuplicateSetsRow instead (see body)
         }
     }
 }
@@ -613,7 +596,12 @@ struct ChatShellView: View {
             VStack(spacing: 0) {
                 ScrollViewReader { scrollProxy in
                     ScrollView {
-                        LazyVStack(alignment: .leading, spacing: 8) {
+                        // A plain (not lazy) stack: a chat has dozens of
+                        // messages at most, and a lazy one re-measured
+                        // off-screen messages after a sheet closed, which
+                        // shifted the scroll position up. (The photo row
+                        // inside is still lazy, so thumbnails load on demand.)
+                        VStack(alignment: .leading, spacing: 8) {
                             ForEach(viewModel.messages) { message in
                                 ChatBubbleView(message: message, viewModel: viewModel)
                                     .id(message.id)
@@ -621,6 +609,9 @@ struct ChatShellView: View {
                         }
                         .padding()
                     }
+                    // Like Messages: when anything changes size, keep the
+                    // bottom of the chat where it is.
+                    .defaultScrollAnchor(.bottom, for: .sizeChanges)
                     .onChange(of: viewModel.messages.count) { _, _ in
                         guard let lastID = viewModel.messages.last?.id else { return }
                         withAnimation { scrollProxy.scrollTo(lastID, anchor: .bottom) }
