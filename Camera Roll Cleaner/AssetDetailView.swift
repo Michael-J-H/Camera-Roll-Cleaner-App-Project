@@ -58,6 +58,9 @@ private struct FullResolutionImageView: View {
 struct AssetDetailView: View {
     let assets: [PHAsset]
     @State var selectedIndex: Int
+    /// The duplicate set's current top pick, if any — shown with a ★ badge
+    /// while it's the photo on screen.
+    var topPickID: String? = nil
 
     @State private var imageCache = PHCachingImageManager()
     // Keyed by asset id rather than index, and owned here rather than by
@@ -93,6 +96,19 @@ struct AssetDetailView: View {
         }
         .tabViewStyle(.page(indexDisplayMode: .always))
         .background(Color.black)
+        // On the viewer, not on each page: pages get recreated as you swipe
+        // (see FullResolutionImageView), the viewer doesn't.
+        .overlay(alignment: .top) {
+            if assets.indices.contains(selectedIndex), assets[selectedIndex].localIdentifier == topPickID {
+                Label("Top pick", systemImage: "star.fill")
+                    .font(.subheadline.bold())
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.yellow, in: Capsule())
+                    .foregroundStyle(.black)
+                    .padding(.top, 8)
+            }
+        }
         .navigationTitle("\(selectedIndex + 1) of \(assets.count)")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {

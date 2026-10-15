@@ -262,6 +262,33 @@ record, not unmerged work.
   come from the real app, plus per-user rate limits. Planned as the first task of the
   cloud AI milestone; required before TestFlight/App Store. For development on the
   developer's own phone only, a local, never-committed key is acceptable.
+- **"Top pick": offline by default, Claude on request (direction agreed; details open).**
+  Each duplicate set shows one *top pick* — today chosen on the phone (sharpest, eyes
+  open). In the set's sheet it's first with a ★ "Top pick" badge; the chat says "Here's my
+  top pick from each — … whether you agree." It's labelled "top pick", not "best",
+  because the choice may later come from Claude and the user's stated taste.
+  - **Offline pick = the free default and the gate.** It handles objective flaws (blur,
+    blinks), costs nothing, works for everyone, and is enough for most bursts. The UI
+    doesn't explain *why* a photo was picked; a short explanation can live in an in-app
+    FAQ, and if a user asks in the chat "why this one?" the app must be able to answer
+    (the scan already records sharpness and eyes-open data per photo).
+  - **Claude = taste, only when asked** — e.g. "I want photos with better landscapes".
+    Claude re-picks using the stated preference and the ★ moves to its choices. This
+    conversation needs the cloud AI milestone (and its relay server); today's chat is
+    scripted and only understands dates.
+  - **Open questions:** (1) should Claude ever step in automatically on near-ties?
+    (suggested: no for v1 — only on request, so cost stays zero unless asked);
+    (2) when a preference is stated, which sets does it apply to — all, the open one, or
+    ask? Telling "landscape" sets from "selfie with nature behind" sets needs judgment.
+    Idea to evaluate: a free on-device first pass (Apple Vision's image classification
+    labels like beach/mountain/sky, plus the face detection already run — a face filling
+    the frame = selfie) narrows the sets, then Claude ranks only those; (3) should stated
+    preferences be remembered across scans?
+  - **Cost estimate (re-verify against Anthropic's pricing/image-token docs when
+    building):** small thumbnails cost roughly 50–350 input tokens each; at Claude Haiku
+    5.5's listed $0.10 per million input tokens, ranking ~100 thumbnails is well under one
+    cent (a few cents on Sonnet 5.5). The "reasoning" isn't the expensive part — the
+    number of photos sent is, so the design should send only sets that match.
 
 ## Notes for Claude Code
 The developer (project owner) is not a coder. Prioritize:

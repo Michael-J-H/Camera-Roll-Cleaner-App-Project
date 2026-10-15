@@ -203,7 +203,7 @@ final class ChatViewModel: ObservableObject {
             append(.assistant, .text("""
             I looked through \(result.totalScanned) photos from \(formatted) and found \
             \(result.duplicateClusters.count) set\(result.duplicateClusters.count == 1 ? "" : "s") of duplicates. \
-            Here's the best shot from each — swipe through to check it's the right stretch of time.
+            Here's my top pick from each — tap a set to see all its shots and whether you agree.
             """))
             append(.assistant, .clusterResults(result, dateRange: interval))
         }

@@ -18,6 +18,10 @@ import SwiftUI
 /// whole library itself). This one just renders whatever list it's given.
 struct AssetGridView: View {
     let assets: [PHAsset]
+    /// Shows a ★ badge on this photo — the current top pick of a duplicate
+    /// set. nil (the default) shows no badge.
+    var topPickID: String? = nil
+    @Environment(\.displayScale) private var displayScale
     private let columns = [
         GridItem(.flexible(), spacing: 2),
         GridItem(.flexible(), spacing: 2),
@@ -38,11 +42,23 @@ struct AssetGridView: View {
                 LazyVGrid(columns: columns, spacing: spacing) {
                     ForEach(Array(assets.enumerated()), id: \.element.localIdentifier) { index, asset in
                         NavigationLink {
-                            AssetDetailView(assets: assets, selectedIndex: index)
+                            AssetDetailView(assets: assets, selectedIndex: index, topPickID: topPickID)
                         } label: {
-                            PhotoThumbnailView(asset: asset, targetSize: CGSize(width: cellSide, height: cellSide))
+                            // Thumbnails are requested in pixels, not on-screen points.
+                            PhotoThumbnailView(asset: asset, targetSize: CGSize(width: cellSide * displayScale, height: cellSide * displayScale))
                                 .frame(width: cellSide, height: cellSide)
                                 .clipped()
+                                .overlay(alignment: .topLeading) {
+                                    if asset.localIdentifier == topPickID {
+                                        Label("Top pick", systemImage: "star.fill")
+                                            .font(.caption2.bold())
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 3)
+                                            .background(.yellow, in: Capsule())
+                                            .foregroundStyle(.black)
+                                            .padding(5)
+                                    }
+                                }
                         }
                         .buttonStyle(.plain) // otherwise NavigationLink tints the thumbnail blue
                     }

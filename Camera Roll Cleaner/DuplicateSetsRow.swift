@@ -13,12 +13,15 @@
 //  back on device. A sheet never navigates the chat away, so there's
 //  nothing to come back to.
 //
-//  Per PROJECT_BRIEF.md: the photo shown for each set is its sharpest,
-//  eyes-open shot (picked during the scan — `PhotoCluster.representative`),
-//  and photos with no duplicates aren't shown at all. Choosing what to keep
-//  is a later, separate step.
+//  The photo shown for each set is its current top pick — today the
+//  sharpest, eyes-open shot, picked on the phone during the scan
+//  (`PhotoCluster.representative`); later possibly re-picked by Claude to
+//  match the user's taste (see the brief's Decision Log). In the set's
+//  sheet it comes first with a ★ "Top pick" badge. Photos with no
+//  duplicates aren't shown at all. Choosing what to keep is a later step.
 //
 
+import Photos
 import SwiftUI
 
 struct DuplicateSetsRow: View {
@@ -55,7 +58,7 @@ struct DuplicateSetsRow: View {
         }
         .sheet(item: $openSet) { cluster in
             NavigationStack {
-                AssetGridView(assets: cluster.members.map { $0.asset })
+                AssetGridView(assets: topPickFirst(cluster), topPickID: cluster.representative.asset.localIdentifier)
                     .navigationTitle(title(for: cluster))
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -66,6 +69,11 @@ struct DuplicateSetsRow: View {
                     }
             }
         }
+    }
+
+    private func topPickFirst(_ cluster: PhotoCluster) -> [PHAsset] {
+        let pick = cluster.representative.asset
+        return [pick] + cluster.members.map(\.asset).filter { $0.localIdentifier != pick.localIdentifier }
     }
 
     private func title(for cluster: PhotoCluster) -> String {
