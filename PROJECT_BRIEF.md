@@ -141,7 +141,7 @@ record, not unmerged work.
       "first weekend of"), so free combinations work: holidays, "two weeks before …",
       "week of …", "first two weeks of …", seasons, weekdays, "a week earlier", and more; asks
       when a request has two readings and refuses rather than guesses. Checked
-      against 172 phrases with known answers (`DateParserChecks/check.sh`). Apple's
+      against 197 phrases with known answers (`DateParserChecks/check.sh`). Apple's
       on-device model was tried for this and removed (see Decision Log). The chat's message
       box now grows to 5 lines so longer requests are readable. **Date step is done.**
 - [x] In-chat preview row + pop-out grid, tested on device — after a scan the chat shows
@@ -232,9 +232,22 @@ record, not unmerged work.
   no pattern covered a lone holiday. Numbers-only dates ("10/1/2025") go to iOS's date
   detector, which uses the phone's region for day/month order. "A week earlier"-style
   changes move the range already being discussed. Same answer every time, works on every
-  iPhone, and checked on the Mac against a fixed list of phrases with known answers (172
+  iPhone, and checked on the Mac against a fixed list of phrases with known answers (197
   phrases: everyday ones, combinations, weekdays, and refusal/ambiguity cases) — re-run it after any
   change with `DateParserChecks/check.sh` (prints "All phrases match" if nothing changed).
+  **Misspelled months are tolerated where a date is obvious:** if a day number or year
+  follows a word, it's read as a month when it's within one typo of a month name (two for
+  longer words; swapped letters count as one) — "septemebr 26", "octobr 2025" — or starts
+  with a month's first three letters, which are all different ("septmbre 26", "octbr 4").
+  March and May are also everyday words, so "mar…"/"may…" words must still be within one
+  typo ("marhc 3" yes; "match 3", "mark 3", "maybe 2025" no). Accepted cost: an unlikely
+  "junk 2024" or "novel 5" reads as June 2024 / Nov 5 — the confirmation step shows it.
+  **Dates typed backwards are left as-is for now (deliberate).** A borrowed year that puts
+  the first date after the second is read as wrapping over New Year ("Nov to Feb 2026" =
+  Nov 2025 – Feb 2026). So "Oct 4 to Sep 26 2025" reads as Oct 4, 2024 – Sep 26, 2025, not
+  the reversed week. A fix was built (take the much shorter reading; ask when close) and
+  then dropped by the developer's choice as an edge case — the confirmation step shows the
+  long range before any scan. Revisit if it comes up in real use.
   **It refuses rather than guesses:** anything it can't place gets "I couldn't pick out a
   date" plus the calendar option. Specifically: "may", "march", "fall" and "spring" only
   count as dates in a date-like position ("in May", "May 2025", "this fall", "May to July")

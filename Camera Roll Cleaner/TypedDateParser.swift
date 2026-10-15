@@ -86,7 +86,7 @@ enum TypedDateParser {
     /// - Parameter current: The range already being discussed, if any —
     ///   needed for "a week earlier" and the like.
     static func reading(of input: String, current: DateInterval? = nil, now: Date = .now, calendar: Calendar = .current) -> Reading {
-        var scan = Scan(input.lowercased().replacingOccurrences(of: "\u{2019}", with: "'"))
+        var scan = Scan(fixingMonthTypos(in: input.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")))
         dropAmbiguousWords(&scan)
 
         if scan.peek(#"\b(?:a few|several|some|some time|sometime|a while|a bit|a little while)\s+(?:(?:days?|weeks?|months?|years?|"# + weekdayNames + #")s?\s+)?ago\b"#) != nil {
@@ -171,6 +171,80 @@ enum TypedDateParser {
         }
         let onlyBroad = modifier == nil && mentions.count == 1 && mentions[0].isBroad
         return (readings, onlyBroad)
+    }
+
+    // MARK: - Misspelled months
+
+    private static let monthNames = [
+        "january", "february", "march", "april", "may", "june", "july",
+        "august", "september", "october", "november", "december",
+    ]
+
+    /// Rewrites a misspelled month ("septemebr 26", "octobr 2025") to the
+    /// real name — but only where a date is obviously meant: the word must
+    /// be directly followed by a day number or year, and be within one
+    /// typo of a month name (two for longer words; swapped letters count
+    /// as one) or start with a month's first three letters. Careful with
+    /// March and May, which are also everyday words ("match 3", "mark 3"
+    /// and "maybe 2025" stay as they are), and "member 2" never becomes
+    /// "December". Without this, an unrecognized "26" left
+    /// over from a misspelled month made the whole message unreadable.
+    private static func fixingMonthTypos(in text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"\b([a-z]{4,})\.?(?=\s*,?\s*\d)"#) else { return text }
+        var result = text as NSString
+        // Back to front, so earlier positions stay valid after replacements.
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: result.length)).reversed() {
+            let range = match.range(at: 1)
+            let word = result.substring(with: range)
+            // Already a month (or accepted short form like "sept")? Leave it.
+            guard word.range(of: "^" + monthPattern + "$", options: .regularExpression) == nil else { continue }
+            if let month = closeMonth(to: word) ?? monthByFirstThreeLetters(word) {
+                result = result.replacingCharacters(in: range, with: month) as NSString
+            }
+        }
+        return result as String
+    }
+
+    /// Within one typo of a month name (two for longer words). Never March
+    /// — "match", "marsh" are everyday words a letter away.
+    private static func closeMonth(to word: String) -> String? {
+        let allowed = word.count >= 7 ? 2 : 1
+        let close = monthNames.filter { $0.count >= 4 && $0 != "march" && typoDistance(word, $0) <= allowed }
+        let best = close.min { typoDistance(word, $0) < typoDistance(word, $1) }
+        // Two months equally close: too unclear to pick one.
+        guard let best, close.filter({ typoDistance(word, $0) == typoDistance(word, best) }).count == 1 else { return nil }
+        return best
+    }
+
+    /// Bigger typos ("septmbre", "octbr"): no two months share their first
+    /// three letters, so those identify the month. Except "mar" and "may",
+    /// which start everyday words ("mark", "maybe") — those must still be
+    /// within one typo of March or May ("marhc" yes, "mark" no).
+    private static func monthByFirstThreeLetters(_ word: String) -> String? {
+        guard let month = monthNames.first(where: { word.hasPrefix($0.prefix(3)) }) else { return nil }
+        if month == "march" || month == "may" {
+            return typoDistance(word, month) <= 1 ? month : nil
+        }
+        return month
+    }
+
+    /// How many single-letter changes (add, remove, replace, or swap two
+    /// neighbours) turn one word into the other.
+    private static func typoDistance(_ a: String, _ b: String) -> Int {
+        let a = Array(a), b = Array(b)
+        var d = Array(repeating: Array(repeating: 0, count: b.count + 1), count: a.count + 1)
+        for i in 0...a.count { d[i][0] = i }
+        for j in 0...b.count { d[0][j] = j }
+        for i in stride(from: 1, through: a.count, by: 1) {
+            for j in stride(from: 1, through: b.count, by: 1) {
+                let cost = a[i - 1] == b[j - 1] ? 0 : 1
+                d[i][j] = min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost)
+                if i > 1, j > 1, a[i - 1] == b[j - 2], a[i - 2] == b[j - 1] {
+                    d[i][j] = min(d[i][j], d[i - 2][j - 2] + 1)
+                }
+            }
+        }
+        return d[a.count][b.count]
     }
 
     // MARK: - Words that are only sometimes dates
@@ -601,7 +675,10 @@ enum TypedDateParser {
         }
 
         // "November to February 2026" wraps over New Year: the borrowed 2026
-        // puts November after February, so step it back a year.
+        // puts November after February, so step it back a year. (Dates
+        // typed backwards — "October 4 to September 26 2025" — also land
+        // here and read as a year-long range; left that way by choice for
+        // now, see the brief's Decision Log.)
         for i in result.indices.dropLast() where result[i].yearCameFromLaterMention {
             if let this = interval(for: result[i], calendar: calendar),
                let next = interval(for: result[i + 1], calendar: calendar), this.start > next.start {
