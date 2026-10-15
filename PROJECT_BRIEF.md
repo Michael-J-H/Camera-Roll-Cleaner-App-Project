@@ -100,6 +100,11 @@ The actual planned UX:
 - **Anthropic API account** — will be needed once we wire up the cloud AI step; not yet set up.
 
 ## Status so far
+Everything checked off below is committed **and merged into `main`** on GitHub. Each
+milestone is built on its own branch (e.g. `preview-row`) and merged into `main` as soon as
+it's tested on device, so `main` always has all finished work; a leftover branch is only a
+record, not unmerged work.
+
 - [x] Xcode installed, Claude Code installed and running in this folder
 - [x] GitHub account exists
 - [x] Blank Xcode project created and run successfully ("hello world" milestone — confirmed on
@@ -147,9 +152,19 @@ The actual planned UX:
       down to close) — a sheet rather than a pushed screen, because a navigation link inside
       the chat's message list left the chat frozen after coming back. The chat stays
       anchored to the bottom when sizes change.
-- [ ] Cloud AI integration for judgment calls
-- [ ] Review/confirm/delete flow (no new permission needed — read/write is already granted;
-      iOS confirms every deletion itself)
+- [ ] Review/confirm/delete flow — suggested next (no new permission needed — read/write is
+      already granted; iOS confirms every deletion itself). First step: rank *every* photo
+      in each set (today only the single best is picked — see below), check the picks
+      against the developer's own judgment on the test range, then build the per-set review
+      screen.
+      **What exists now:** during the scan each set gets one "best" photo
+      (`PhotoClusterEngine.pickRepresentative`): photos with a face but closed/blinking eyes
+      are set aside (unless every photo has them), then the sharpest remaining one wins
+      (variance-of-Laplacian blur detection, `PhotoQualityScorer.swift`). That's the photo
+      the preview row shows. Not yet: an order for the rest of the set, other signals
+      (exposure, framing, smiles), or any check that the pick matches what the user would
+      keep.
+- [ ] Cloud AI integration for judgment calls (first task: the backend relay for the API key)
 
 ## Decision log
 - **Apple's Moments API rejected as a session-grouping signal.** Checked
