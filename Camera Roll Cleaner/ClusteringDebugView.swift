@@ -144,6 +144,10 @@ struct ClusteringDebugView: View {
                         .foregroundStyle(.secondary)
                     Text("Sharpness score: \(String(format: "%.1f", cluster.representative.sharpness))")
                         .font(.caption2)
+                    if !cluster.representative.faceQualities.isEmpty {
+                        Text("Face quality: \(cluster.representative.faceQualities.map { String(format: "%.2f", $0) }.joined(separator: ", "))")
+                            .font(.caption2)
+                    }
                     if let eyes = cluster.representative.eyesOpenScore {
                         Text("Eyes-open score: \(String(format: "%.2f", eyes))")
                             .font(.caption2)

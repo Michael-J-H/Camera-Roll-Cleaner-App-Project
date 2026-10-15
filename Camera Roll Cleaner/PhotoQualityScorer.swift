@@ -64,17 +64,23 @@ enum PhotoQualityScorer {
     /// tends to mean closed/blinking, higher means open. The exact cutoff
     /// used elsewhere (see PhotoClusterEngine) is a judgment call, tuned
     /// by eye rather than measured against labeled photos.
+    ///
+    /// The score is the **least open** face in the photo (each face being
+    /// the average of its two eyes), so one person blinking marks the whole
+    /// photo. An earlier version averaged every eye in the photo together,
+    /// and one person's wide-open eyes hid the other's closed ones.
     static func eyesOpenScore(from faceObservations: [VNFaceObservation]?) -> Double? {
         guard let faces = faceObservations, !faces.isEmpty else { return nil }
 
-        var ratios: [Double] = []
+        var perFace: [Double] = []
         for face in faces {
             guard let landmarks = face.landmarks else { continue }
-            if let left = landmarks.leftEye { ratios.append(eyeOpenRatio(left)) }
-            if let right = landmarks.rightEye { ratios.append(eyeOpenRatio(right)) }
+            var eyes: [Double] = []
+            if let left = landmarks.leftEye { eyes.append(eyeOpenRatio(left)) }
+            if let right = landmarks.rightEye { eyes.append(eyeOpenRatio(right)) }
+            if !eyes.isEmpty { perFace.append(eyes.reduce(0, +) / Double(eyes.count)) }
         }
-        guard !ratios.isEmpty else { return nil }
-        return ratios.reduce(0, +) / Double(ratios.count)
+        return perFace.min()
     }
 
     /// Height-to-width ratio of the eye outline Vision detects. A wide,

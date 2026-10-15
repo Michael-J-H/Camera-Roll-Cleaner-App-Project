@@ -157,13 +157,28 @@ record, not unmerged work.
       in each set (today only the single best is picked — see below), check the picks
       against the developer's own judgment on the test range, then build the per-set review
       screen.
-      **What exists now:** during the scan each set gets one "best" photo
-      (`PhotoClusterEngine.pickRepresentative`): photos with a face but closed/blinking eyes
-      are set aside (unless every photo has them), then the sharpest remaining one wins
-      (variance-of-Laplacian blur detection, `PhotoQualityScorer.swift`). That's the photo
-      the preview row shows. Not yet: an order for the rest of the set, other signals
-      (exposure, framing, smiles), or any check that the pick matches what the user would
-      keep.
+      **What exists now:** during the scan each set gets one "top pick"
+      (`PhotoClusterEngine.pickRepresentative`): photos where *anyone's* eyes are closed are
+      set aside (unless every photo has that problem) — checked per person, since averaging
+      everyone's eyes let one person's open eyes hide another's blink; then, **in sets with people**, the photo with the
+      best combined *face capture quality* wins — Apple's on-device score for choosing the
+      best of several shots of the same people (pose, expression, focus, lighting); a face
+      missing from one photo counts as zero there. **In sets without people**, the sharpest
+      photo wins (variance-of-Laplacian blur detection, `PhotoQualityScorer.swift`).
+      Sharpness-only picking was replaced for people photos after it chose a sharp but
+      awkward mid-movement shot (a couple sliding off a rock) over ones of them sitting and
+      smiling at the camera. Faces are judged on a larger copy of the photo (2048px instead
+      of the 512px used for grouping), since faces in wide shots were too small to read
+      eyes reliably. **Known limit:** nothing on-device understands gestures or awkward
+      poses (e.g. a hand pointed at the camera) — that judgment is a job for the AI step.
+      **Offline pick is deliberately paused here.** A "prefer everyone facing the camera"
+      rule (Apple reports head direction) was considered and rejected: the phone can't tell
+      an intentional look — a couple looking at each other on purpose — from a glance
+      away, so it would trade posed-shot mistakes for candid-shot ones. Choosing between
+      good shots is taste and intent, left to the AI step; until then the chat frames the
+      pick as "my top pick … whether you agree".
+      Not yet: an order for the rest of the set, landscape/framing
+      signals, or a check across many sets that the pick matches what the user would keep.
 - [ ] Cloud AI integration for judgment calls (first task: the backend relay for the API key)
 
 ## Decision log

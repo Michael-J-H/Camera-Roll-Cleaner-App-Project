@@ -41,13 +41,78 @@ private struct FullResolutionImageView: View {
     var body: some View {
         Group {
             if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
+                ZoomableImageView(image: image)
             } else {
                 ProgressView()
                     .tint(.white)
             }
+        }
+    }
+}
+
+/// Pinch to zoom, drag around while zoomed, double-tap to zoom in or back
+/// out — like the Photos app. Built on UIKit's scroll view rather than
+/// SwiftUI gestures because it already handles zooming smoothly and, while
+/// the photo isn't zoomed, lets sideways swipes through to the page view
+/// so swiping between photos keeps working.
+private struct ZoomableImageView: UIViewRepresentable {
+    let image: UIImage
+
+    func makeUIView(context: Context) -> ZoomingScrollView {
+        let view = ZoomingScrollView()
+        view.imageView.image = image
+        return view
+    }
+
+    func updateUIView(_ view: ZoomingScrollView, context: Context) {
+        if view.imageView.image !== image {
+            view.imageView.image = image
+            view.setZoomScale(1, animated: false)
+        }
+    }
+}
+
+private final class ZoomingScrollView: UIScrollView, UIScrollViewDelegate {
+    let imageView = UIImageView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        delegate = self
+        minimumZoomScale = 1
+        maximumZoomScale = 5
+        showsHorizontalScrollIndicator = false
+        showsVerticalScrollIndicator = false
+        contentInsetAdjustmentBehavior = .never
+        imageView.contentMode = .scaleAspectFit
+        addSubview(imageView)
+
+        let doubleTap = UITapGestureRecognizer(target: self, action: #selector(handleDoubleTap(_:)))
+        doubleTap.numberOfTapsRequired = 2
+        addGestureRecognizer(doubleTap)
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // At normal size the photo fills the screen (fitted, like before).
+        if zoomScale == minimumZoomScale {
+            imageView.frame = bounds
+            contentSize = bounds.size
+        }
+    }
+
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? { imageView }
+
+    @objc private func handleDoubleTap(_ gesture: UITapGestureRecognizer) {
+        if zoomScale > minimumZoomScale {
+            setZoomScale(minimumZoomScale, animated: true)
+        } else {
+            // Zoom in around the spot that was tapped.
+            let point = gesture.location(in: imageView)
+            let scale: CGFloat = 2.5
+            let size = CGSize(width: bounds.width / scale, height: bounds.height / scale)
+            zoom(to: CGRect(origin: CGPoint(x: point.x - size.width / 2, y: point.y - size.height / 2), size: size), animated: true)
         }
     }
 }

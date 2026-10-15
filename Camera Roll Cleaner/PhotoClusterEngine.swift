@@ -28,6 +28,9 @@ struct ClusterCandidate {
     let featurePrint: VNFeaturePrintObservation
     let sharpness: Double
     let eyesOpenScore: Double? // nil = no face detected in this photo
+    /// Apple's face capture quality (0–1, higher = better) for each face
+    /// found — empty when there are no faces. See pickRepresentative.
+    let faceQualities: [Double]
     let creationDate: Date?
     let location: CLLocation?
 }
@@ -94,6 +97,11 @@ nonisolated enum PhotoClusterEngine {
     private static let maxLocationDistanceMeters: Double = 100
     private static let closedEyeThreshold: Double = 0.2
     private static let workingImageSize = CGSize(width: 512, height: 512)
+    /// Photos with faces get their faces re-checked at this larger size: in
+    /// a wide shot, faces at 512px are only ~20–30px across — too small to
+    /// tell open eyes from closed, or for Apple's face quality score to be
+    /// reliable. Only photos with people pay for the extra load.
+    private static let faceDetailImageSize = CGSize(width: 2048, height: 2048)
 
     /// The fixed window ClusteringDebugView checks against (Sep 26 – Oct 4,
     /// 2025 inclusive, in the device's local calendar) — kept as a named
@@ -127,9 +135,10 @@ nonisolated enum PhotoClusterEngine {
             // bug in this code. This has to be tested on a real iPhone.
             let featurePrintRequest = VNGenerateImageFeaturePrintRequest()
             let faceRequest = VNDetectFaceLandmarksRequest()
+            let faceQualityRequest = VNDetectFaceCaptureQualityRequest()
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             do {
-                try handler.perform([featurePrintRequest, faceRequest])
+                try handler.perform([featurePrintRequest, faceRequest, faceQualityRequest])
             } catch {
                 failedAssets.append(FailedAsset(asset: asset, reason: "Vision request failed: \(error.localizedDescription)"))
                 print("[Clustering] Vision failed for \(asset.localIdentifier): \(error)")
@@ -140,12 +149,28 @@ nonisolated enum PhotoClusterEngine {
                 continue
             }
 
+            // Faces found: judge them again on a larger copy (see
+            // faceDetailImageSize). If that fails for any reason, keep the
+            // small-image results rather than dropping the photo.
+            var faceResults = faceRequest.results
+            var faceQualityResults = faceQualityRequest.results
+            if !(faceResults ?? []).isEmpty,
+               let detailed = await loadImage(for: asset, targetSize: faceDetailImageSize)?.cgImage {
+                let detailFaces = VNDetectFaceLandmarksRequest()
+                let detailQuality = VNDetectFaceCaptureQualityRequest()
+                if (try? VNImageRequestHandler(cgImage: detailed, options: [:]).perform([detailFaces, detailQuality])) != nil {
+                    faceResults = detailFaces.results
+                    faceQualityResults = detailQuality.results
+                }
+            }
+
             candidates.append(
                 ClusterCandidate(
                     asset: asset,
                     featurePrint: featurePrint,
                     sharpness: PhotoQualityScorer.sharpnessScore(for: image),
-                    eyesOpenScore: PhotoQualityScorer.eyesOpenScore(from: faceRequest.results),
+                    eyesOpenScore: PhotoQualityScorer.eyesOpenScore(from: faceResults),
+                    faceQualities: (faceQualityResults ?? []).compactMap { $0.faceCaptureQuality.map(Double.init) },
                     creationDate: asset.creationDate,
                     location: asset.location
                 )
@@ -381,15 +406,34 @@ nonisolated enum PhotoClusterEngine {
 
     // MARK: - Representative selection
 
-    /// Two-step, not a blended score: first rule out anyone with clearly
-    /// closed eyes (unless that would rule out the whole cluster — a
-    /// blurry-but-open-eyed photo still beats having no candidate left at
-    /// all), then take the sharpest of whoever remains. Chosen over a
-    /// single weighted formula because it's easier to explain and check
-    /// by eye than an arbitrary blend of two unrelated numbers.
+    /// Step by step, not a blended score — easier to explain and check by
+    /// eye than an arbitrary blend of unrelated numbers:
+    ///
+    /// 1. Rule out photos where anyone's eyes are clearly closed (unless
+    ///    that would rule out the whole set — a flawed photo beats no
+    ///    candidate at all).
+    /// 2. **Sets with people:** pick the best combined face capture quality.
+    ///    That's Apple's own on-device score, made for choosing the best of
+    ///    several shots of the same people — it weighs pose (facing the
+    ///    camera), expression, focus and lighting. Sharpness alone picked a
+    ///    sharp but awkward mid-movement shot of a couple sliding off a rock
+    ///    over the ones of them sitting and smiling at the camera. Each
+    ///    photo's face scores are summed and divided by the most faces any
+    ///    photo in the set has, so a face that's missing in one photo
+    ///    (someone turned away) counts as zero there rather than being
+    ///    quietly skipped. Sharpness only breaks ties.
+    /// 3. **Sets without people:** the sharpest photo.
     private static func pickRepresentative(_ members: [ClusterCandidate]) -> ClusterCandidate {
         let eyesOpenEnough = members.filter { ($0.eyesOpenScore ?? 1.0) >= closedEyeThreshold }
         let pool = eyesOpenEnough.isEmpty ? members : eyesOpenEnough
+
+        let mostFaces = members.map(\.faceQualities.count).max() ?? 0
+        if mostFaces > 0 {
+            func faceScore(_ c: ClusterCandidate) -> Double { c.faceQualities.reduce(0, +) / Double(mostFaces) }
+            return pool.max {
+                (faceScore($0), $0.sharpness) < (faceScore($1), $1.sharpness)
+            } ?? members[0]
+        }
         return pool.max { $0.sharpness < $1.sharpness } ?? members[0]
     }
 }
