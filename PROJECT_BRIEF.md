@@ -179,6 +179,9 @@ record, not unmerged work.
       **Deleting every photo in a set** shows a red "None of this moment will be kept" line
       and asks once more ("Delete every photo of this moment?") before iOS's own
       confirmation; sets with at least one photo kept go straight to iOS's confirmation.
+      **Recovering deleted photos is left to iOS (decided).** Apps can't see or restore items
+      in Recently Deleted, and the developer chose not to add an in-app hint pointing there —
+      users can find Photos → Albums → Recently Deleted themselves.
       Background (no new permission needed — read/write is
       already granted; iOS confirms every deletion itself). First step: rank *every* photo
       in each set (today only the single best is picked — see below), check the picks
