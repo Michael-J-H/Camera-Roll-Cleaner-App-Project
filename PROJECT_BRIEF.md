@@ -152,7 +152,7 @@ record, not unmerged work.
       down to close) — a sheet rather than a pushed screen, because a navigation link inside
       the chat's message list left the chat frozen after coming back. The chat stays
       anchored to the bottom when sizes change.
-- [ ] Review/confirm/delete flow — built (`ReviewView.swift`), awaiting on-device test.
+- [x] Review/confirm/delete flow, tested on device (`ReviewView.swift`).
       "Review sets" (or tapping a set in the chat's photo row) opens the sets one at a time.
       The top pick starts as Keep, every other photo as Delete (trimming duplicates is the
       point of the app); tapping a photo switches it, and ⤢ opens it full size (with zoom)
@@ -176,6 +176,9 @@ record, not unmerged work.
       the top pick is deleted the ★ moves to the next best, which starts as Keep and becomes
       the set's cover in the chat. It moves only on an actual delete, not while photos are
       merely marked, and never overrides a choice the user made.
+      **Deleting every photo in a set** shows a red "None of this moment will be kept" line
+      and asks once more ("Delete every photo of this moment?") before iOS's own
+      confirmation; sets with at least one photo kept go straight to iOS's confirmation.
       Background (no new permission needed — read/write is
       already granted; iOS confirms every deletion itself). First step: rank *every* photo
       in each set (today only the single best is picked — see below), check the picks

@@ -151,6 +151,7 @@ struct ReviewView: View {
 
     @State private var viewerStart: ViewerStart?
     @State private var isDeleting = false
+    @State private var confirmingDeleteAll = false
     @State private var errorMessage: String?
     @Environment(\.displayScale) private var displayScale
 
@@ -328,6 +329,11 @@ struct ReviewView: View {
                      ? "This set: nothing marked for deletion"
                      : "This set: \(marked) of \(photos.count) photos marked for deletion · about \(size(session.markedBytes(in: set)))")
                     .font(.subheadline.bold())
+                if marked > 0 && marked == photos.count {
+                    Text("None of this moment will be kept.")
+                        .font(.footnote.bold())
+                        .foregroundStyle(.red)
+                }
                 if !session.deletedIDs.isEmpty {
                     Text("Deleted so far: \(session.deletedIDs.count) photo\(session.deletedIDs.count == 1 ? "" : "s") · about \(size(session.deletedBytes))")
                         .font(.footnote)
@@ -340,10 +346,12 @@ struct ReviewView: View {
             .multilineTextAlignment(.center)
 
             Button {
-                isDeleting = true
-                Task {
-                    errorMessage = await session.deleteMarked(in: set)
-                    isDeleting = false
+                // Deleting every photo of a moment gets one extra question
+                // first; otherwise straight to iOS's own confirmation.
+                if marked == photos.count {
+                    confirmingDeleteAll = true
+                } else {
+                    deleteMarked()
                 }
             } label: {
                 Text(marked == 0 ? "Delete" : "Delete \(marked) photo\(marked == 1 ? "" : "s") from this set")
@@ -352,9 +360,23 @@ struct ReviewView: View {
             .buttonStyle(.borderedProminent)
             .tint(.red)
             .disabled(marked == 0 || isDeleting)
+            .confirmationDialog("Delete every photo of this moment?", isPresented: $confirmingDeleteAll, titleVisibility: .visible) {
+                Button("Delete all \(marked)", role: .destructive) { deleteMarked() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("None of the \(marked) photos in this set will be kept.")
+            }
         }
         .padding()
         .background(.bar)
+    }
+
+    private func deleteMarked() {
+        isDeleting = true
+        Task {
+            errorMessage = await session.deleteMarked(in: set)
+            isDeleting = false
+        }
     }
 }
 
