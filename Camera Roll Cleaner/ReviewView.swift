@@ -66,16 +66,28 @@ final class ReviewSession: ObservableObject {
         deletedCount(in: set) > 0 && marked(in: set).isEmpty
     }
 
+    /// The set's current top pick: the best-ranked photo not yet deleted.
+    /// If the top pick is deleted, the ★ moves to the next best. It moves
+    /// only on an actual delete — not while photos are merely marked — so
+    /// it doesn't jump around while the user is still deciding.
+    func topPick(in set: PhotoCluster) -> PHAsset? {
+        set.ranked.map(\.asset).first { !deletedIDs.contains($0.localIdentifier) }
+    }
+
     /// The set's photos still in the library: top pick first, then the rest
     /// in the order they were taken.
     func photos(in set: PhotoCluster) -> [PHAsset] {
-        let pick = set.representative.asset
-        let rest = set.members.map(\.asset).filter { $0.localIdentifier != pick.localIdentifier }
-        return ([pick] + rest).filter { !deletedIDs.contains($0.localIdentifier) }
+        guard let pick = topPick(in: set) else { return [] }
+        let rest = set.members.map(\.asset).filter {
+            $0.localIdentifier != pick.localIdentifier && !deletedIDs.contains($0.localIdentifier)
+        }
+        return [pick] + rest
     }
 
+    /// The current top pick starts as Keep, everything else as Delete,
+    /// unless the user switched it.
     func isKept(_ asset: PHAsset, in set: PhotoCluster) -> Bool {
-        choices[asset.localIdentifier] ?? (asset.localIdentifier == set.representative.asset.localIdentifier)
+        choices[asset.localIdentifier] ?? (asset.localIdentifier == topPick(in: set)?.localIdentifier)
     }
 
     func toggle(_ asset: PHAsset, in set: PhotoCluster) {
@@ -177,7 +189,7 @@ struct ReviewView: View {
                     AssetDetailView(
                         assets: photos,
                         selectedIndex: start.index,
-                        topPickID: set.representative.asset.localIdentifier,
+                        topPickID: session.topPick(in: set)?.localIdentifier,
                         accessory: { asset in AnyView(ReviewToggle(session: session, set: set, asset: asset)) }
                     )
                 }
@@ -231,7 +243,7 @@ struct ReviewView: View {
             .clipped()
             .overlay { if !kept { Color.black.opacity(0.45) } }
             .overlay(alignment: .topLeading) {
-                if asset.localIdentifier == set.representative.asset.localIdentifier {
+                if asset.localIdentifier == session.topPick(in: set)?.localIdentifier {
                     Image(systemName: "star.fill")
                         .font(.caption.bold())
                         .padding(5)

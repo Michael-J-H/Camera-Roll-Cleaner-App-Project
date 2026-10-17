@@ -29,7 +29,7 @@ struct ClusterCandidate {
     let sharpness: Double
     let eyesOpenScore: Double? // nil = no face detected in this photo
     /// Apple's face capture quality (0–1, higher = better) for each face
-    /// found — empty when there are no faces. See pickRepresentative.
+    /// found — empty when there are no faces. See rank(_:).
     let faceQualities: [Double]
     let creationDate: Date?
     let location: CLLocation?
@@ -38,7 +38,11 @@ struct ClusterCandidate {
 struct PhotoCluster: Identifiable {
     let id = UUID()
     let members: [ClusterCandidate]
-    let representative: ClusterCandidate
+    /// Every member, best first (see PhotoClusterEngine.rank). Kept whole
+    /// so that if the top pick is deleted, the next best can take over.
+    let ranked: [ClusterCandidate]
+    /// The top pick — the best-ranked photo.
+    var representative: ClusterCandidate { ranked[0] }
 }
 
 /// TEMPORARY diagnostic type — a pair of photos that landed in different
@@ -184,7 +188,7 @@ nonisolated enum PhotoClusterEngine {
         for group in groups {
             if group.count > 1 {
                 duplicateClusters.append(
-                    PhotoCluster(members: group, representative: pickRepresentative(group))
+                    PhotoCluster(members: group, ranked: rank(group))
                 )
             } else if let only = group.first {
                 singles.append(only)
@@ -423,17 +427,21 @@ nonisolated enum PhotoClusterEngine {
     ///    (someone turned away) counts as zero there rather than being
     ///    quietly skipped. Sharpness only breaks ties.
     /// 3. **Sets without people:** the sharpest photo.
-    private static func pickRepresentative(_ members: [ClusterCandidate]) -> ClusterCandidate {
-        let eyesOpenEnough = members.filter { ($0.eyesOpenScore ?? 1.0) >= closedEyeThreshold }
-        let pool = eyesOpenEnough.isEmpty ? members : eyesOpenEnough
-
+    ///
+    /// Applied to the whole set, this gives a full ranking (best first):
+    /// photos with everyone's eyes open, best to worst, then the ones with
+    /// closed eyes, best to worst. The top of the list is the top pick; the
+    /// rest let the next best take over if the top pick is deleted.
+    private static func rank(_ members: [ClusterCandidate]) -> [ClusterCandidate] {
         let mostFaces = members.map(\.faceQualities.count).max() ?? 0
-        if mostFaces > 0 {
-            func faceScore(_ c: ClusterCandidate) -> Double { c.faceQualities.reduce(0, +) / Double(mostFaces) }
-            return pool.max {
-                (faceScore($0), $0.sharpness) < (faceScore($1), $1.sharpness)
-            } ?? members[0]
+        func score(_ c: ClusterCandidate) -> (Double, Double) {
+            guard mostFaces > 0 else { return (c.sharpness, 0) }
+            return (c.faceQualities.reduce(0, +) / Double(mostFaces), c.sharpness)
         }
-        return pool.max { $0.sharpness < $1.sharpness } ?? members[0]
+        func eyesOpen(_ c: ClusterCandidate) -> Bool { (c.eyesOpenScore ?? 1.0) >= closedEyeThreshold }
+        return members.sorted { a, b in
+            if eyesOpen(a) != eyesOpen(b) { return eyesOpen(a) }
+            return score(a) > score(b)
+        }
     }
 }

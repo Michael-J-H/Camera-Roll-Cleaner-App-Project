@@ -172,6 +172,10 @@ record, not unmerged work.
       done partway through. The button is highlighted, as a hint only, once something's been
       deleted and nothing left is marked for deletion. The last set's button says "Finish"
       so "done" always means a finished set.
+      **Next best:** the scan ranks every photo in a set (same rules as the top pick), so if
+      the top pick is deleted the ★ moves to the next best, which starts as Keep and becomes
+      the set's cover in the chat. It moves only on an actual delete, not while photos are
+      merely marked, and never overrides a choice the user made.
       Background (no new permission needed — read/write is
       already granted; iOS confirms every deletion itself). First step: rank *every* photo
       in each set (today only the single best is picked — see below), check the picks
