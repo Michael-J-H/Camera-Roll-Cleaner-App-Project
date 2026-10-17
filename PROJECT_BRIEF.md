@@ -152,20 +152,26 @@ record, not unmerged work.
       down to close) — a sheet rather than a pushed screen, because a navigation link inside
       the chat's message list left the chat frozen after coming back. The chat stays
       anchored to the bottom when sizes change.
-- [ ] Review/confirm/delete flow — IN PROGRESS, in two steps.
-      **Step 1 (review screens, no delete code):** `ReviewView.swift`. "Review sets" (or
-      tapping a set in the chat's photo row) opens the sets one at a time. The top pick
-      starts as Keep, every other photo as Delete (trimming duplicates is the point of the
-      app); tapping a photo switches it, and ⤢ opens it full size (with zoom) with a
-      Keep/Delete button. Back / Next / Skip move between sets. A running total shows
-      "N photos marked · about X MB". **Decisions:** deleting can happen at any time, not
-      only after every set (users may only have time for a few) — so *only sets the user has
-      looked at count*, and Skip leaves a set out; choices survive closing and reopening the
-      review. Storage shown is an estimate from a value Photos keeps per file that Apple
-      doesn't officially document (small App Store review risk; fallback: estimate from pixel
-      dimensions), and the UI says the space only comes back after Recently Deleted's 30
-      days. **Step 2 (next):** wire the Delete button to iOS's own confirmation; test on
-      throwaway photos first.
+- [ ] Review/confirm/delete flow — built (`ReviewView.swift`), awaiting on-device test.
+      "Review sets" (or tapping a set in the chat's photo row) opens the sets one at a time.
+      The top pick starts as Keep, every other photo as Delete (trimming duplicates is the
+      point of the app); tapping a photo switches it, and ⤢ opens it full size (with zoom)
+      with a Keep/Delete button. **Delete removes only the set on screen** ("Delete 3 photos
+      from this set") through iOS's own confirmation; cancelling there changes nothing.
+      Deleting everything marked across many sets was rejected — it's hard to remember what
+      was marked in sets no longer on screen, and users may only have time for a few. Next
+      leaves a set as it is. Shown: "This set: N of M photos marked for deletion · about X
+      MB", and a running "Deleted so far" total. Sizes come from a value Photos keeps per file
+      that Apple doesn't officially document (small App Store review risk; fallback: estimate
+      from pixel dimensions); the UI says space only comes back after Recently Deleted's 30
+      days. Choices and deletions survive closing and reopening the review. The chat's
+      photo row updates live: counts reflect deletions, a set with every photo deleted drops
+      out (of the row and the review), and a set the user marks done shows a ✓ Done badge
+      ("3 duplicate sets · 1 done"). **Done is only ever set by the user** ("Mark as done" in
+      the review; tap again to undo) — inferring it was tried and wrongly marked a big set
+      done partway through. The button is highlighted, as a hint only, once something's been
+      deleted and nothing left is marked for deletion. The last set's button says "Finish"
+      so "done" always means a finished set.
       Background (no new permission needed — read/write is
       already granted; iOS confirms every deletion itself). First step: rank *every* photo
       in each set (today only the single best is picked — see below), check the picks

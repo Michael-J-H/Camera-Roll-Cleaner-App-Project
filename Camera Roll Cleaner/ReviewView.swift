@@ -2,42 +2,76 @@
 //  ReviewView.swift
 //  Camera Roll Cleaner
 //
-//  Going through duplicate sets one at a time and marking what to keep.
-//  In each set the top pick starts as Keep and every other photo as Delete
-//  (trimming duplicates is the point of the app); tapping a photo switches
-//  it. A running total shows how many photos are marked and roughly how
-//  much space they take up.
+//  Going through duplicate sets one at a time, choosing what to keep, and
+//  deleting the rest. In each set the top pick starts as Keep and every
+//  other photo as Delete (trimming duplicates is the point of the app);
+//  tapping a photo switches it.
 //
-//  Deleting can happen at any point — the user may only have time for a
-//  few sets — so only sets they've actually looked at count. Sets not yet
-//  opened are never included, even though their extra shots are pre-marked.
-//  Skip leaves a looked-at set out.
+//  Delete only ever affects the set on screen. Deleting everything marked
+//  across many sets at once was considered and rejected: it's hard to
+//  remember what was marked in sets you're no longer looking at, and users
+//  may only have time for a few sets anyway. Next simply leaves a set as it
+//  is.
 //
-//  STEP 1 OF 2: this file contains no delete code. The Delete button is
-//  shown but not wired up yet; that's the next step.
+//  Deleting goes through iOS's own confirmation dialog — the app can't
+//  skip or fake it — and deleted photos go to the Photos app's Recently
+//  Deleted album for 30 days, where they can still be recovered.
 //
 
 import Combine
 import Photos
 import SwiftUI
 
-/// What's marked across all sets in one scan. Lives as long as the scan's
-/// results in the chat, so closing and reopening the review keeps choices.
+/// Keep/Delete choices and what's been deleted, for one scan. Lives as long
+/// as the scan's results in the chat, so closing and reopening the review
+/// keeps everything.
 @MainActor
 final class ReviewSession: ObservableObject {
     let sets: [PhotoCluster]
 
-    /// Sets the user has looked at (and not skipped) — the only ones whose
-    /// marks count.
-    @Published private(set) var lookedAt: Set<UUID> = []
-    @Published private(set) var skipped: Set<UUID> = []
     /// Photos the user switched away from the default (asset id → keep?).
     @Published private var choices: [String: Bool] = [:]
+    /// Photos already deleted — no longer shown anywhere in the review.
+    @Published private(set) var deletedIDs: Set<String> = []
+    @Published private(set) var deletedBytes: Int64 = 0
 
     private var sizeCache: [String: Int64] = [:]
 
     init(sets: [PhotoCluster]) {
         self.sets = sets
+    }
+
+    /// Sets that still have photos. A set whose photos were all deleted
+    /// drops out of the review and the chat's row.
+    var visibleSets: [PhotoCluster] {
+        sets.filter { !photos(in: $0).isEmpty }
+    }
+
+    /// Sets the user has marked as done. Only the user marks a set done —
+    /// the app never infers it: someone partway through a big set (some
+    /// deleted, some still to decide) would otherwise see it marked done
+    /// before they'd finished.
+    @Published private var doneIDs: Set<UUID> = []
+
+    func isDone(_ set: PhotoCluster) -> Bool { doneIDs.contains(set.id) }
+
+    func setDone(_ set: PhotoCluster, _ done: Bool) {
+        if done { doneIDs.insert(set.id) } else { doneIDs.remove(set.id) }
+    }
+
+    /// When "Mark as done" is worth nudging: something's been deleted and
+    /// nothing left is marked for deletion. A hint only — never applied
+    /// automatically.
+    func looksFinished(_ set: PhotoCluster) -> Bool {
+        deletedCount(in: set) > 0 && marked(in: set).isEmpty
+    }
+
+    /// The set's photos still in the library: top pick first, then the rest
+    /// in the order they were taken.
+    func photos(in set: PhotoCluster) -> [PHAsset] {
+        let pick = set.representative.asset
+        let rest = set.members.map(\.asset).filter { $0.localIdentifier != pick.localIdentifier }
+        return ([pick] + rest).filter { !deletedIDs.contains($0.localIdentifier) }
     }
 
     func isKept(_ asset: PHAsset, in set: PhotoCluster) -> Bool {
@@ -46,48 +80,48 @@ final class ReviewSession: ObservableObject {
 
     func toggle(_ asset: PHAsset, in set: PhotoCluster) {
         choices[asset.localIdentifier] = !isKept(asset, in: set)
-        include(set) // changing something in a set clearly means it's been looked at
     }
 
-    func include(_ set: PhotoCluster) {
-        lookedAt.insert(set.id)
-        skipped.remove(set.id)
+    func marked(in set: PhotoCluster) -> [PHAsset] {
+        photos(in: set).filter { !isKept($0, in: set) }
     }
 
-    func skip(_ set: PhotoCluster) {
-        lookedAt.remove(set.id)
-        skipped.insert(set.id)
-    }
-
-    func isSkipped(_ set: PhotoCluster) -> Bool { skipped.contains(set.id) }
-
-    /// Every photo marked Delete in sets the user has looked at.
-    var markedForDeletion: [PHAsset] {
-        sets.filter { lookedAt.contains($0.id) }
-            .flatMap { set in set.members.map(\.asset).filter { !isKept($0, in: set) } }
-    }
-
-    func markedCount(in set: PhotoCluster) -> Int {
-        set.members.filter { !isKept($0.asset, in: set) }.count
-    }
-
-    /// Roughly how much storage the marked photos use, including the
-    /// video half of Live Photos and any saved edits.
-    var markedBytes: Int64 {
-        markedForDeletion.reduce(0) { $0 + bytes(for: $1) }
-    }
-
-    /// Same, for one set only.
     func markedBytes(in set: PhotoCluster) -> Int64 {
-        set.members.map(\.asset).filter { !isKept($0, in: set) }.reduce(0) { $0 + bytes(for: $1) }
+        marked(in: set).reduce(0) { $0 + bytes(for: $1) }
+    }
+
+    func deletedCount(in set: PhotoCluster) -> Int {
+        set.members.filter { deletedIDs.contains($0.asset.localIdentifier) }.count
+    }
+
+    /// Asks iOS to delete this set's marked photos. iOS shows its own
+    /// confirmation; if the user cancels there, nothing changes. Returns
+    /// a message to show if something went wrong, nil otherwise.
+    func deleteMarked(in set: PhotoCluster) async -> String? {
+        let assets = marked(in: set)
+        guard !assets.isEmpty else { return nil }
+        let bytes = assets.reduce(Int64(0)) { $0 + self.bytes(for: $1) }
+        do {
+            try await PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.deleteAssets(assets as NSArray)
+            }
+            deletedIDs.formUnion(assets.map(\.localIdentifier))
+            deletedBytes += bytes
+            return nil
+        } catch let error as PHPhotosError where error.code == .userCancelled {
+            return nil // they tapped Don't Allow in iOS's dialog — fine, nothing happens
+        } catch {
+            return "Couldn't delete those photos: \(error.localizedDescription)"
+        }
     }
 
     /// JUDGMENT CALL: Apple has no documented way to read a photo's file
     /// size. This reads the "fileSize" value Photos keeps on each of a
-    /// photo's underlying files — widely used and reliable, but not
-    /// officially documented, so App Store review could in principle flag
-    /// it. If it's ever unavailable, the photo counts as 0 bytes rather than
-    /// crashing; a fallback would be an estimate from pixel dimensions.
+    /// photo's underlying files (including the video half of a Live Photo
+    /// and any saved edits) — widely used and reliable, but not officially
+    /// documented, so App Store review could in principle flag it. If it's
+    /// ever unavailable, the photo counts as 0 bytes rather than crashing; a
+    /// fallback would be an estimate from pixel dimensions.
     private func bytes(for asset: PHAsset) -> Int64 {
         if let cached = sizeCache[asset.localIdentifier] { return cached }
         let total = PHAssetResource.assetResources(for: asset).reduce(Int64(0)) { sum, resource in
@@ -104,6 +138,8 @@ struct ReviewView: View {
     let onClose: () -> Void
 
     @State private var viewerStart: ViewerStart?
+    @State private var isDeleting = false
+    @State private var errorMessage: String?
     @Environment(\.displayScale) private var displayScale
 
     private struct ViewerStart: Identifiable, Hashable {
@@ -111,18 +147,25 @@ struct ReviewView: View {
         var id: Int { index }
     }
 
-    private var set: PhotoCluster { session.sets[index] }
-
-    /// Top pick first, then the rest in the order they were taken.
-    private var photos: [PHAsset] {
-        let pick = set.representative.asset
-        return [pick] + set.members.map(\.asset).filter { $0.localIdentifier != pick.localIdentifier }
-    }
+    // Index into the sets that still have photos, so a set emptied by a
+    // delete drops out and the next one moves into its place.
+    private var sets: [PhotoCluster] { session.visibleSets }
+    private var set: PhotoCluster { sets[min(index, sets.count - 1)] }
+    private var photos: [PHAsset] { session.photos(in: set) }
 
     var body: some View {
+        if sets.isEmpty {
+            // Every set emptied — nothing left to review.
+            Color.clear.onAppear(perform: onClose)
+        } else {
+            review
+        }
+    }
+
+    private var review: some View {
         NavigationStack {
             grid
-                .navigationTitle("Set \(index + 1) of \(session.sets.count)")
+                .navigationTitle("Set \(min(index, sets.count - 1) + 1) of \(sets.count)")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -138,14 +181,15 @@ struct ReviewView: View {
                         accessory: { asset in AnyView(ReviewToggle(session: session, set: set, asset: asset)) }
                     )
                 }
+                .alert("Something went wrong", isPresented: Binding(
+                    get: { errorMessage != nil },
+                    set: { if !$0 { errorMessage = nil } }
+                )) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text(errorMessage ?? "")
+                }
         }
-        // Opening a set counts as looking at it (unless it was skipped).
-        .onAppear { includeUnlessSkipped() }
-        .onChange(of: index) { _, _ in includeUnlessSkipped() }
-    }
-
-    private func includeUnlessSkipped() {
-        if !session.isSkipped(set) { session.include(set) }
     }
 
     // MARK: Photos
@@ -156,9 +200,7 @@ struct ReviewView: View {
             let side = (geometry.size.width - spacing * 2) / 3
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text(session.isSkipped(set)
-                         ? "Skipped — nothing in this set will be deleted."
-                         : "Tap a photo to keep or delete it. Tap ⤢ to see it full size.")
+                    Text(headline)
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal)
@@ -174,13 +216,20 @@ struct ReviewView: View {
         }
     }
 
+    private var headline: String {
+        let deleted = session.deletedCount(in: set)
+        if deleted > 0 {
+            return "Deleted \(deleted) photo\(deleted == 1 ? "" : "s") from this set. Tap a photo to keep or delete it."
+        }
+        return "Tap a photo to keep or delete it. Tap ⤢ to see it full size."
+    }
+
     private func cell(_ asset: PHAsset, offset: Int, side: CGFloat) -> some View {
         let kept = session.isKept(asset, in: set)
-        let dimmed = !kept && !session.isSkipped(set)
         return PhotoThumbnailView(asset: asset, targetSize: CGSize(width: side * displayScale, height: side * displayScale))
             .frame(width: side, height: side)
             .clipped()
-            .overlay { if dimmed { Color.black.opacity(0.45) } }
+            .overlay { if !kept { Color.black.opacity(0.45) } }
             .overlay(alignment: .topLeading) {
                 if asset.localIdentifier == set.representative.asset.localIdentifier {
                     Image(systemName: "star.fill")
@@ -199,7 +248,6 @@ struct ReviewView: View {
                     .background(kept ? Color.green : Color.red, in: Capsule())
                     .foregroundStyle(.white)
                     .padding(5)
-                    .opacity(session.isSkipped(set) ? 0.4 : 1)
             }
             .overlay(alignment: .bottomTrailing) {
                 Button {
@@ -222,65 +270,76 @@ struct ReviewView: View {
 
     // MARK: Bottom bar
 
+    /// The user — not the app — marks a set done. Marking it moves on to
+    /// the next set; tapping again on a done set undoes it.
+    @ViewBuilder
+    private var doneButton: some View {
+        if session.isDone(set) {
+            Button("✓ Done · Undo") { session.setDone(set, false) }
+                .tint(.green)
+        } else {
+            let mark = Button("Mark as done") {
+                session.setDone(set, true)
+                if min(index, sets.count - 1) < sets.count - 1 { index = min(index, sets.count - 1) + 1 }
+            }
+            if session.looksFinished(set) {
+                mark.buttonStyle(.borderedProminent)
+            } else {
+                mark
+            }
+        }
+    }
+
     private var bottomBar: some View {
-        VStack(spacing: 10) {
+        let marked = session.marked(in: set).count
+        return VStack(spacing: 10) {
             HStack {
-                Button("Back", systemImage: "chevron.left") { index -= 1 }
-                    .disabled(index == 0)
+                Button("Back", systemImage: "chevron.left") { index = min(index, sets.count - 1) - 1 }
+                    .disabled(min(index, sets.count - 1) == 0)
                 Spacer()
-                Button(session.isSkipped(set) ? "Include" : "Skip") {
-                    if session.isSkipped(set) {
-                        session.include(set)
-                    } else {
-                        session.skip(set)
-                        if index < session.sets.count - 1 { index += 1 }
-                    }
-                }
+                doneButton
                 Spacer()
-                if index < session.sets.count - 1 {
-                    Button("Next", systemImage: "chevron.right") { index += 1 }
+                if min(index, sets.count - 1) < sets.count - 1 {
+                    Button("Next", systemImage: "chevron.right") { index = min(index, sets.count - 1) + 1 }
                         .labelStyle(TrailingIconLabelStyle())
                 } else {
-                    Button("Done", action: onClose)
+                    // "Finish", not "Done": "done" only ever means a set is finished.
+                    Button("Finish", action: onClose)
                 }
             }
             .buttonStyle(.bordered)
 
             Divider()
 
-            // This set first — that's what's on screen. The total across
-            // every set looked at so far comes second, smaller: shown alone
-            // it read as a mistake (24 marked in a set of 22).
-            let count = session.markedForDeletion.count
-            let inSet = session.markedCount(in: set)
             VStack(spacing: 4) {
-                Text(session.isSkipped(set)
-                     ? "This set: skipped"
-                     : "This set: \(inSet) of \(set.members.count) photos marked for deletion · about \(size(session.markedBytes(in: set)))")
+                Text(marked == 0
+                     ? "This set: nothing marked for deletion"
+                     : "This set: \(marked) of \(photos.count) photos marked for deletion · about \(size(session.markedBytes(in: set)))")
                     .font(.subheadline.bold())
-                Text(count == 0
-                     ? "Nothing marked for deletion yet in the sets you've looked at."
-                     : "All sets you've looked at: \(count) photo\(count == 1 ? "" : "s") marked for deletion · about \(size(session.markedBytes))")
-                    .font(.footnote)
+                if !session.deletedIDs.isEmpty {
+                    Text("Deleted so far: \(session.deletedIDs.count) photo\(session.deletedIDs.count == 1 ? "" : "s") · about \(size(session.deletedBytes))")
+                        .font(.footnote)
+                }
                 Text("Deleted photos stay in Recently Deleted for 30 days before the space is freed.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            // All three lines centered, so wrapped lines line up.
+            // Centered, so wrapped lines line up.
             .multilineTextAlignment(.center)
 
-            // Step 2 wires this up to iOS's own delete confirmation.
             Button {
+                isDeleting = true
+                Task {
+                    errorMessage = await session.deleteMarked(in: set)
+                    isDeleting = false
+                }
             } label: {
-                Text(count == 0 ? "Delete" : "Delete \(count) photo\(count == 1 ? "" : "s")")
+                Text(marked == 0 ? "Delete" : "Delete \(marked) photo\(marked == 1 ? "" : "s") from this set")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(.red)
-            .disabled(true)
-            Text("Deleting is coming in the next step.")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            .disabled(marked == 0 || isDeleting)
         }
         .padding()
         .background(.bar)

@@ -54,14 +54,15 @@ struct DuplicateSetsRow: View {
             // scan with hundreds of sets costs about the same as one with ten.
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 8) {
-                    ForEach(Array(result.duplicateClusters.enumerated()), id: \.element.id) { index, cluster in
+                    // Only sets that still have photos — emptied ones drop out.
+                    ForEach(Array(review.visibleSets.enumerated()), id: \.element.id) { index, cluster in
                         Button {
                             openAt = ReviewStart(index: index)
                         } label: {
                             thumbnail(for: cluster)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Set \(index + 1), \(cluster.members.count) photos")
+                        .accessibilityLabel("Set \(index + 1), \(review.photos(in: cluster).count) photos")
                     }
                 }
             }
@@ -83,15 +84,29 @@ struct DuplicateSetsRow: View {
         }
     }
 
+    // Counts and covers come from the review session, so they reflect
+    // anything already deleted there rather than the original scan.
     private func thumbnail(for cluster: PhotoCluster) -> some View {
+        let remaining = review.photos(in: cluster) // top pick first, if it's still there
         // Thumbnails are requested in pixels, so scale up from on-screen
         // points to keep them sharp on the phone's high-resolution display.
-        PhotoThumbnailView(asset: cluster.representative.asset,
-                           targetSize: CGSize(width: side * displayScale, height: side * displayScale))
+        return PhotoThumbnailView(asset: remaining.first ?? cluster.representative.asset,
+                                  targetSize: CGSize(width: side * displayScale, height: side * displayScale))
             .frame(width: side, height: side)
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(alignment: .topLeading) {
+                if review.isDone(cluster) {
+                    Label("Done", systemImage: "checkmark.circle.fill")
+                        .font(.caption2.bold())
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(.green, in: Capsule())
+                        .foregroundStyle(.white)
+                        .padding(5)
+                }
+            }
             .overlay(alignment: .bottomTrailing) {
-                Text("\(cluster.members.count)")
+                Text("\(remaining.count)")
                     .font(.caption2.bold())
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -100,10 +115,11 @@ struct DuplicateSetsRow: View {
             }
     }
 
-    private var setCount: Int { result.duplicateClusters.count }
-
     private var summary: String {
-        let photos = result.duplicateClusters.reduce(0) { $0 + $1.members.count }
-        return "\(setCount) duplicate set\(setCount == 1 ? "" : "s") · \(photos) photos"
+        let sets = review.visibleSets
+        let done = sets.filter { review.isDone($0) }.count
+        let photos = sets.reduce(0) { $0 + review.photos(in: $1).count }
+        let doneText = done > 0 ? " · \(done) done" : ""
+        return "\(sets.count) duplicate set\(sets.count == 1 ? "" : "s")\(doneText) · \(photos) photos"
     }
 }
