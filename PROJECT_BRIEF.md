@@ -193,8 +193,23 @@ record, not unmerged work.
       everyone's eyes let one person's open eyes hide another's blink; then, **in sets with people**, the photo with the
       best combined *face capture quality* wins — Apple's on-device score for choosing the
       best of several shots of the same people (pose, expression, focus, lighting); a face
-      missing from one photo counts as zero there. **In sets without people**, the sharpest
-      photo wins (variance-of-Laplacian blur detection, `PhotoQualityScorer.swift`).
+      missing from one photo counts as zero there; near-equal face scores (within 0.05) are
+      decided by Apple's aesthetics score. **In sets without people**, Apple's *aesthetics
+      score* wins (its built-in model judging composition, lighting and subject, -1 to 1;
+      iOS 18+), with sharpness (variance-of-Laplacian, `PhotoQualityScorer.swift`) breaking
+      ties — chosen over hand-coded composition rules like the golden ratio, which good
+      photos often break on purpose and which barely vary within a burst. Horizon-tilt
+      detection was left out for now (the aesthetics score already weighs it).
+      **Orientation:** iPhone photos are often stored sideways with a "rotate when
+      displaying" tag; the scan had been dropping it, so portrait photos were judged lying on
+      their side (the aesthetics score then favoured the landscape shot of the same scene).
+      The quality checks (eyes, face quality, aesthetics) now get the tag. On-device check
+      (Sep 26 – Oct 4, 2025): aesthetics scoring looked better but not perfect; the effect of
+      the orientation fix was hard to judge by eye — kept because it's correct regardless. **Open item:** the
+      grouping step (feature prints) still ignores it, unchanged so far because fixing it
+      could change which photos count as duplicates — it may be behind the known
+      portrait/landscape mismatch limitation. Needs its own before/after check on the debug
+      screen.
       Sharpness-only picking was replaced for people photos after it chose a sharp but
       awkward mid-movement shot (a couple sliding off a rock) over ones of them sitting and
       smiling at the camera. Faces are judged on a larger copy of the photo (2048px instead
@@ -356,6 +371,11 @@ The developer (project owner) is not a coder. Prioritize:
   choice or writing code a particular way — don't let optional stylistic choices read as if
   they were mandatory, and vice versa.
 - Small, testable milestones over large batches of untested code.
+- **Before hand-building any photo judgment, check what Apple's Vision framework already
+  ships** (e.g. face capture quality, aesthetics scores, saliency, horizon detection) — its
+  models are trained on far more photos than any rule we'd write. Missed once: the top pick
+  went through several rounds of fixes (sharpness, eyes, face quality) before the built-in
+  aesthetics score was considered.
 - **The developer tests UI changes on their own iPhone.** Claude Code should confirm the
   project builds and give a short test checklist, not drive the simulator. Commit each
   known-good state before tweaking further, so it can be rolled back.

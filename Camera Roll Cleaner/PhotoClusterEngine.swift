@@ -31,6 +31,10 @@ struct ClusterCandidate {
     /// Apple's face capture quality (0–1, higher = better) for each face
     /// found — empty when there are no faces. See rank(_:).
     let faceQualities: [Double]
+    /// Apple's overall aesthetics score (-1 least to 1 most desirable) —
+    /// composition, lighting, subject and so on, judged by a model trained
+    /// on real photos. nil if it couldn't be calculated.
+    let aestheticsScore: Double?
     let creationDate: Date?
     let location: CLLocation?
 }
@@ -137,12 +141,24 @@ nonisolated enum PhotoClusterEngine {
             // (the Neural Engine) — it fails on the iOS Simulator with "Failed to
             // create espresso context", a known Apple platform limitation, not a
             // bug in this code. This has to be tested on a real iPhone.
+            //
+            // ORIENTATION: iPhone photos are often stored sideways plus a
+            // "rotate when displaying" tag, which `cgImage` drops. The
+            // quality checks below are given that tag, so they see the
+            // photo upright — without it, portrait photos were judged lying
+            // on their side, which made the aesthetics score favour the
+            // landscape shot of the same scene and likely hurt face checks.
+            // The grouping (feature print) still runs WITHOUT the tag, as it
+            // always has, so which photos count as duplicates is unchanged;
+            // fixing it there too is a separate, deliberately tested change.
             let featurePrintRequest = VNGenerateImageFeaturePrintRequest()
             let faceRequest = VNDetectFaceLandmarksRequest()
             let faceQualityRequest = VNDetectFaceCaptureQualityRequest()
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            let upright = CGImagePropertyOrientation(image.imageOrientation)
             do {
-                try handler.perform([featurePrintRequest, faceRequest, faceQualityRequest])
+                try VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([featurePrintRequest])
+                try VNImageRequestHandler(cgImage: cgImage, orientation: upright, options: [:])
+                    .perform([faceRequest, faceQualityRequest])
             } catch {
                 failedAssets.append(FailedAsset(asset: asset, reason: "Vision request failed: \(error.localizedDescription)"))
                 print("[Clustering] Vision failed for \(asset.localIdentifier): \(error)")
@@ -153,16 +169,25 @@ nonisolated enum PhotoClusterEngine {
                 continue
             }
 
+            // Apple's aesthetics score, run on its own so that if it fails
+            // the photo still gets grouped — it just has no score.
+            let aestheticsRequest = VNCalculateImageAestheticsScoresRequest()
+            try? VNImageRequestHandler(cgImage: cgImage, orientation: upright, options: [:]).perform([aestheticsRequest])
+            let aestheticsScore = aestheticsRequest.results?.first.map { Double($0.overallScore) }
+
             // Faces found: judge them again on a larger copy (see
             // faceDetailImageSize). If that fails for any reason, keep the
             // small-image results rather than dropping the photo.
             var faceResults = faceRequest.results
             var faceQualityResults = faceQualityRequest.results
             if !(faceResults ?? []).isEmpty,
-               let detailed = await loadImage(for: asset, targetSize: faceDetailImageSize)?.cgImage {
+               let detailedImage = await loadImage(for: asset, targetSize: faceDetailImageSize),
+               let detailed = detailedImage.cgImage {
                 let detailFaces = VNDetectFaceLandmarksRequest()
                 let detailQuality = VNDetectFaceCaptureQualityRequest()
-                if (try? VNImageRequestHandler(cgImage: detailed, options: [:]).perform([detailFaces, detailQuality])) != nil {
+                let detailUpright = CGImagePropertyOrientation(detailedImage.imageOrientation)
+                if (try? VNImageRequestHandler(cgImage: detailed, orientation: detailUpright, options: [:])
+                    .perform([detailFaces, detailQuality])) != nil {
                     faceResults = detailFaces.results
                     faceQualityResults = detailQuality.results
                 }
@@ -175,6 +200,7 @@ nonisolated enum PhotoClusterEngine {
                     sharpness: PhotoQualityScorer.sharpnessScore(for: image),
                     eyesOpenScore: PhotoQualityScorer.eyesOpenScore(from: faceResults),
                     faceQualities: (faceQualityResults ?? []).compactMap { $0.faceCaptureQuality.map(Double.init) },
+                    aestheticsScore: aestheticsScore,
                     creationDate: asset.creationDate,
                     location: asset.location
                 )
@@ -426,7 +452,14 @@ nonisolated enum PhotoClusterEngine {
     ///    photo in the set has, so a face that's missing in one photo
     ///    (someone turned away) counts as zero there rather than being
     ///    quietly skipped. Sharpness only breaks ties.
-    /// 3. **Sets without people:** the sharpest photo.
+    /// 3. **Sets without people:** the best Apple aesthetics score — its
+    ///    built-in model judging composition, lighting and subject, trained
+    ///    on real photos (rather than a hand-written rule like the golden
+    ///    ratio, which good photos often break on purpose). Sharpness
+    ///    breaks ties. Earlier versions used sharpness alone.
+    ///
+    /// In people sets, aesthetics also decides between photos whose face
+    /// scores are nearly equal (within 0.05), before sharpness.
     ///
     /// Applied to the whole set, this gives a full ranking (best first):
     /// photos with everyone's eyes open, best to worst, then the ones with
@@ -434,14 +467,36 @@ nonisolated enum PhotoClusterEngine {
     /// rest let the next best take over if the top pick is deleted.
     private static func rank(_ members: [ClusterCandidate]) -> [ClusterCandidate] {
         let mostFaces = members.map(\.faceQualities.count).max() ?? 0
-        func score(_ c: ClusterCandidate) -> (Double, Double) {
-            guard mostFaces > 0 else { return (c.sharpness, 0) }
-            return (c.faceQualities.reduce(0, +) / Double(mostFaces), c.sharpness)
+        func score(_ c: ClusterCandidate) -> (Double, Double, Double) {
+            let aesthetics = c.aestheticsScore ?? -1
+            guard mostFaces > 0 else { return (aesthetics, c.sharpness, 0) }
+            // Face scores rounded to steps of 0.05, so near-equal faces
+            // fall through to aesthetics instead of a meaningless hair's
+            // difference deciding.
+            let face = (c.faceQualities.reduce(0, +) / Double(mostFaces) / 0.05).rounded() * 0.05
+            return (face, aesthetics, c.sharpness)
         }
         func eyesOpen(_ c: ClusterCandidate) -> Bool { (c.eyesOpenScore ?? 1.0) >= closedEyeThreshold }
         return members.sorted { a, b in
             if eyesOpen(a) != eyesOpen(b) { return eyesOpen(a) }
             return score(a) > score(b)
+        }
+    }
+}
+
+extension CGImagePropertyOrientation {
+    /// The same rotation/flip, in the form Apple's Vision tools take.
+    init(_ orientation: UIImage.Orientation) {
+        switch orientation {
+        case .up: self = .up
+        case .upMirrored: self = .upMirrored
+        case .down: self = .down
+        case .downMirrored: self = .downMirrored
+        case .left: self = .left
+        case .leftMirrored: self = .leftMirrored
+        case .right: self = .right
+        case .rightMirrored: self = .rightMirrored
+        @unknown default: self = .up
         }
     }
 }
