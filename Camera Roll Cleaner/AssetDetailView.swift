@@ -126,6 +126,9 @@ struct AssetDetailView: View {
     /// The duplicate set's current top pick, if any — shown with a ★ badge
     /// while it's the photo on screen.
     var topPickID: String? = nil
+    /// Optional control shown at the bottom for the photo on screen — the
+    /// review screen uses it for a Keep / Delete button.
+    var accessory: ((PHAsset) -> AnyView)? = nil
 
     @State private var imageCache = PHCachingImageManager()
     // Keyed by asset id rather than index, and owned here rather than by
@@ -172,6 +175,12 @@ struct AssetDetailView: View {
                     .background(.yellow, in: Capsule())
                     .foregroundStyle(.black)
                     .padding(.top, 8)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            if let accessory, assets.indices.contains(selectedIndex) {
+                accessory(assets[selectedIndex])
+                    .padding(.bottom, 44) // clear of the page dots
             }
         }
         .navigationTitle("\(selectedIndex + 1) of \(assets.count)")

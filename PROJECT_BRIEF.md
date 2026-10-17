@@ -152,7 +152,21 @@ record, not unmerged work.
       down to close) — a sheet rather than a pushed screen, because a navigation link inside
       the chat's message list left the chat frozen after coming back. The chat stays
       anchored to the bottom when sizes change.
-- [ ] Review/confirm/delete flow — suggested next (no new permission needed — read/write is
+- [ ] Review/confirm/delete flow — IN PROGRESS, in two steps.
+      **Step 1 (review screens, no delete code):** `ReviewView.swift`. "Review sets" (or
+      tapping a set in the chat's photo row) opens the sets one at a time. The top pick
+      starts as Keep, every other photo as Delete (trimming duplicates is the point of the
+      app); tapping a photo switches it, and ⤢ opens it full size (with zoom) with a
+      Keep/Delete button. Back / Next / Skip move between sets. A running total shows
+      "N photos marked · about X MB". **Decisions:** deleting can happen at any time, not
+      only after every set (users may only have time for a few) — so *only sets the user has
+      looked at count*, and Skip leaves a set out; choices survive closing and reopening the
+      review. Storage shown is an estimate from a value Photos keeps per file that Apple
+      doesn't officially document (small App Store review risk; fallback: estimate from pixel
+      dimensions), and the UI says the space only comes back after Recently Deleted's 30
+      days. **Step 2 (next):** wire the Delete button to iOS's own confirmation; test on
+      throwaway photos first.
+      Background (no new permission needed — read/write is
       already granted; iOS confirms every deletion itself). First step: rank *every* photo
       in each set (today only the single best is picked — see below), check the picks
       against the developer's own judgment on the test range, then build the per-set review

@@ -4,8 +4,9 @@
 //
 //  The scan results shown right in the chat: one photo per duplicate set,
 //  in a sideways-scrolling row, so the user can check at a glance that the
-//  scan found the right trip. Tapping a photo opens every shot in that set
-//  as a sheet over the chat (the brief's "pop-out grid").
+//  scan found the right trip. Tapping a photo — or "Review sets" — opens the
+//  review (ReviewView) as a sheet over the chat, at that set, where photos
+//  are marked Keep or Delete.
 //
 //  Why a sheet rather than pushing a new screen: the row lives inside the
 //  chat's scrolling message list, which only keeps on-screen messages in
@@ -17,8 +18,8 @@
 //  sharpest, eyes-open shot, picked on the phone during the scan
 //  (`PhotoCluster.representative`); later possibly re-picked by Claude to
 //  match the user's taste (see the brief's Decision Log). In the set's
-//  sheet it comes first with a ★ "Top pick" badge. Photos with no
-//  duplicates aren't shown at all. Choosing what to keep is a later step.
+//  review it comes first with a ★ and starts as Keep. Photos with no
+//  duplicates aren't shown at all.
 //
 
 import Photos
@@ -29,7 +30,20 @@ struct DuplicateSetsRow: View {
 
     private let side: CGFloat = 96
     @Environment(\.displayScale) private var displayScale
-    @State private var openSet: PhotoCluster?
+    /// Keep/Delete choices for this scan — kept here so closing and
+    /// reopening the review doesn't lose them.
+    @StateObject private var review: ReviewSession
+    @State private var openAt: ReviewStart?
+
+    private struct ReviewStart: Identifiable {
+        let index: Int
+        var id: Int { index }
+    }
+
+    init(result: ClusteringResult) {
+        self.result = result
+        _review = StateObject(wrappedValue: ReviewSession(sets: result.duplicateClusters))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -42,7 +56,7 @@ struct DuplicateSetsRow: View {
                 LazyHStack(spacing: 8) {
                     ForEach(Array(result.duplicateClusters.enumerated()), id: \.element.id) { index, cluster in
                         Button {
-                            openSet = cluster
+                            openAt = ReviewStart(index: index)
                         } label: {
                             thumbnail(for: cluster)
                         }
@@ -55,30 +69,18 @@ struct DuplicateSetsRow: View {
             Text("Tap a photo to see every shot in that set.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-        }
-        .sheet(item: $openSet) { cluster in
-            NavigationStack {
-                AssetGridView(assets: topPickFirst(cluster), topPickID: cluster.representative.asset.localIdentifier)
-                    .navigationTitle(title(for: cluster))
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        // Same ✕ as the calendar sheet, so closing looks the same everywhere.
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Close", systemImage: "xmark") { openSet = nil }
-                        }
-                    }
+
+            Button {
+                openAt = ReviewStart(index: 0)
+            } label: {
+                Label("Review sets", systemImage: "checkmark.rectangle.stack")
             }
+            .buttonStyle(.borderedProminent)
+            .padding(.top, 4)
         }
-    }
-
-    private func topPickFirst(_ cluster: PhotoCluster) -> [PHAsset] {
-        let pick = cluster.representative.asset
-        return [pick] + cluster.members.map(\.asset).filter { $0.localIdentifier != pick.localIdentifier }
-    }
-
-    private func title(for cluster: PhotoCluster) -> String {
-        let number = (result.duplicateClusters.firstIndex { $0.id == cluster.id } ?? 0) + 1
-        return "Set \(number) of \(setCount) · \(cluster.members.count) photos"
+        .sheet(item: $openAt) { start in
+            ReviewView(session: review, index: start.index) { openAt = nil }
+        }
     }
 
     private func thumbnail(for cluster: PhotoCluster) -> some View {
