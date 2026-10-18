@@ -75,7 +75,11 @@ The actual planned UX:
    they want in the chat. Starting point: a cost-efficient model tier (e.g. Claude Haiku) rather
    than a flagship model, since we're only calling it on small clusters, not the whole library.
    Model choice/pricing should be re-verified against current Anthropic docs when this part is
-   actually built, since both change over time.
+   actually built, since both change over time. **Checked Oct 2026:** Claude Haiku 5.5
+   (released Oct 7, 2026) lists $0.10 per million input / $0.50 per million output tokens,
+   so ranking ~100 small thumbnails is well under a cent. **Write the API code from the
+   current Anthropic docs, not from memory** — the model is new, and settings that worked
+   on Haiku 4.5 now return errors (e.g. sampling settings and assistant "prefill").
 4. **Cost guardrails (decided, in response to developer's concern about runaway token usage):**
    cloud AI is only invoked at actual decision points (comparing a specific cluster), never
    for general back-and-forth chat; send small/thumbnail-sized images, not full-resolution
