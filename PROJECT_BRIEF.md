@@ -53,11 +53,10 @@ The actual planned UX:
   unwieldy.
 - **The preview row shows ONE representative photo per duplicate cluster, not every photo.**
   E.g. if a search matches 50 photos across ~8 duplicate batches, the row shows ~8 thumbnails,
-  one per batch, not all 50. The representative photo for each cluster is chosen by
-  **sharpest/best on-device quality estimate** (via Vision framework — blur detection, open
-  eyes if a face is present), not earliest-taken or AI-selected — goal at this stage is
-  confirming relevance/coverage, not picking a final "best" photo yet.
-- **A full pop-out grid (modal/sheet, reusing the existing PhotoGridView code) is available**
+  one per batch, not all 50. The photo shown for each set is its on-device *top pick* (see
+  the "Top pick" status entry for how it's chosen), not earliest-taken or AI-selected —
+  goal at this stage is confirming relevance/coverage, not picking a final "best" photo.
+- **A full pop-out grid (sheet) is available**
   for deeper review — e.g. tapping into a specific cluster to see every photo in it. This is
   the "let me actually look closely" option, not the default view.
 - **Singles (clusters of exactly 1 photo, i.e. no duplicates found) are excluded entirely from
@@ -152,7 +151,48 @@ record, not unmerged work.
       down to close) — a sheet rather than a pushed screen, because a navigation link inside
       the chat's message list left the chat frozen after coming back. The chat stays
       anchored to the bottom when sizes change.
-- [x] Review/confirm/delete flow, tested on device (`ReviewView.swift`).
+- [x] Top pick — chosen on the phone, tested on device (`PhotoClusterEngine.rank(_:)`,
+      `PhotoQualityScorer.swift`). The scan ranks *every* photo in each set, best first; the
+      top one is the set's ★ top pick, and the rest let the next best take over if it's
+      deleted. Ranking rules, in order:
+      1. Photos where *anyone's* eyes are closed go below the rest — checked per person,
+         since averaging everyone's eyes let one person's open eyes hide another's blink.
+      2. **Sets with people:** best combined *face capture quality* — Apple's on-device score
+         for choosing the best of several shots of the same people (pose, expression, focus,
+         lighting). A face missing from a photo counts as zero there. Near-equal face scores
+         (within 0.05) are decided by the aesthetics score, then sharpness. Faces are judged
+         on a 2048px copy of the photo (grouping uses 512px), since faces in wide shots were
+         too small to read eyes reliably.
+      3. **Sets without people:** best *aesthetics score* — Apple's built-in model judging
+         composition, lighting and subject (-1 to 1; iOS 18+) — with sharpness
+         (variance-of-Laplacian) breaking ties. Chosen over hand-coded composition rules like
+         the golden ratio, which good photos often break on purpose and which barely vary
+         within a burst. Horizon-tilt detection left out (the aesthetics score already
+         weighs it).
+      **Orientation:** iPhone photos are often stored sideways with a "rotate when
+      displaying" tag; the quality checks above now get that tag (they'd been judging
+      portrait photos lying on their side, which made the aesthetics score favour the
+      landscape shot of the same scene). **Grouping (feature prints) still ignores the tag —
+      left as-is by decision:** same-scene shots in different orientations grouped fine on
+      the trip photos but not on quick indoor test shots (likely the 60-second window,
+      close-up framing, or line-heavy indoor scenes — not measured); fine-tuning grouping
+      risked an open-ended effort and could disturb results that work, so it's deferred to
+      the AI step.
+      **History:** sharpness alone picked a sharp but awkward mid-movement shot (a couple
+      sliding off a rock) over ones of them sitting and smiling at the camera → face quality
+      added; one person's blink was missed → per-person eye check and larger face images;
+      aesthetics score added later. On-device check (Sep 26 – Oct 4, 2025): better but not
+      perfect; the orientation fix's effect was hard to judge by eye — kept because it's
+      correct regardless.
+      **Deliberately paused here.** A "prefer everyone facing the camera" rule was rejected:
+      the phone can't tell an intentional look (a couple looking at each other on purpose)
+      from a glance away. **Known limit:** nothing on-device understands gestures or awkward
+      poses (e.g. a hand pointed at the camera). Choosing between good shots is taste and
+      intent, left to the AI step; until then the chat frames the pick as "my top pick …
+      whether you agree". Not yet: a check across many sets that the pick matches what the
+      user would keep.
+- [x] Review/confirm/delete flow, tested on device (`ReviewView.swift`). No new permission
+      was needed (read/write was already granted), and iOS confirms every deletion itself.
       "Review sets" (or tapping a set in the chat's photo row) opens the sets one at a time.
       The top pick starts as Keep, every other photo as Delete (trimming duplicates is the
       point of the app); tapping a photo switches it, and ⤢ opens it full size (with zoom)
@@ -164,67 +204,24 @@ record, not unmerged work.
       MB", and a running "Deleted so far" total. Sizes come from a value Photos keeps per file
       that Apple doesn't officially document (small App Store review risk; fallback: estimate
       from pixel dimensions); the UI says space only comes back after Recently Deleted's 30
-      days. Choices and deletions survive closing and reopening the review. The chat's
-      photo row updates live: counts reflect deletions, a set with every photo deleted drops
-      out (of the row and the review), and a set the user marks done shows a ✓ Done badge
-      ("3 duplicate sets · 1 done"). **Done is only ever set by the user** ("Mark as done" in
-      the review; tap again to undo) — inferring it was tried and wrongly marked a big set
-      done partway through. The button is highlighted, as a hint only, once something's been
-      deleted and nothing left is marked for deletion. The last set's button says "Finish"
-      so "done" always means a finished set.
-      **Next best:** the scan ranks every photo in a set (same rules as the top pick), so if
-      the top pick is deleted the ★ moves to the next best, which starts as Keep and becomes
-      the set's cover in the chat. It moves only on an actual delete, not while photos are
-      merely marked, and never overrides a choice the user made.
+      days. Choices and deletions survive closing and reopening the review.
+      **Chat row:** counts reflect deletions live; a set with every photo deleted drops out
+      (of the row and the review); a set the user marks done shows a ✓ Done badge ("3
+      duplicate sets · 1 done").
+      **Done is only ever set by the user** ("Mark as done" in the review; tap again to undo)
+      — inferring it was tried and wrongly marked a big set done partway through. The button
+      is highlighted, as a hint only, once something's been deleted and nothing left is
+      marked for deletion. The last set's button says "Finish" so "done" always means a
+      finished set.
+      **Next best:** if the top pick is deleted, the ★ moves to the next-ranked photo, which
+      starts as Keep and becomes the set's cover in the chat. It moves only on an actual
+      delete, not while photos are merely marked, and never overrides a choice the user made.
       **Deleting every photo in a set** shows a red "None of this moment will be kept" line
       and asks once more ("Delete every photo of this moment?") before iOS's own
       confirmation; sets with at least one photo kept go straight to iOS's confirmation.
       **Recovering deleted photos is left to iOS (decided).** Apps can't see or restore items
       in Recently Deleted, and the developer chose not to add an in-app hint pointing there —
       users can find Photos → Albums → Recently Deleted themselves.
-      Background (no new permission needed — read/write is
-      already granted; iOS confirms every deletion itself). First step: rank *every* photo
-      in each set (today only the single best is picked — see below), check the picks
-      against the developer's own judgment on the test range, then build the per-set review
-      screen.
-      **What exists now:** during the scan each set gets one "top pick"
-      (`PhotoClusterEngine.pickRepresentative`): photos where *anyone's* eyes are closed are
-      set aside (unless every photo has that problem) — checked per person, since averaging
-      everyone's eyes let one person's open eyes hide another's blink; then, **in sets with people**, the photo with the
-      best combined *face capture quality* wins — Apple's on-device score for choosing the
-      best of several shots of the same people (pose, expression, focus, lighting); a face
-      missing from one photo counts as zero there; near-equal face scores (within 0.05) are
-      decided by Apple's aesthetics score. **In sets without people**, Apple's *aesthetics
-      score* wins (its built-in model judging composition, lighting and subject, -1 to 1;
-      iOS 18+), with sharpness (variance-of-Laplacian, `PhotoQualityScorer.swift`) breaking
-      ties — chosen over hand-coded composition rules like the golden ratio, which good
-      photos often break on purpose and which barely vary within a burst. Horizon-tilt
-      detection was left out for now (the aesthetics score already weighs it).
-      **Orientation:** iPhone photos are often stored sideways with a "rotate when
-      displaying" tag; the scan had been dropping it, so portrait photos were judged lying on
-      their side (the aesthetics score then favoured the landscape shot of the same scene).
-      The quality checks (eyes, face quality, aesthetics) now get the tag. On-device check
-      (Sep 26 – Oct 4, 2025): aesthetics scoring looked better but not perfect; the effect of
-      the orientation fix was hard to judge by eye — kept because it's correct regardless. **Grouping (feature prints) still ignores the
-      tag — left as-is by decision.** Same-scene shots in different orientations grouped fine
-      on the trip photos but not on quick indoor test shots (likely the 60-second window,
-      close-up framing, or line-heavy indoor scenes — not measured). Fine-tuning grouping
-      risked an open-ended effort and could disturb results that work, so it's deferred:
-      the AI step may handle "same moment" judgments better.
-      Sharpness-only picking was replaced for people photos after it chose a sharp but
-      awkward mid-movement shot (a couple sliding off a rock) over ones of them sitting and
-      smiling at the camera. Faces are judged on a larger copy of the photo (2048px instead
-      of the 512px used for grouping), since faces in wide shots were too small to read
-      eyes reliably. **Known limit:** nothing on-device understands gestures or awkward
-      poses (e.g. a hand pointed at the camera) — that judgment is a job for the AI step.
-      **Offline pick is deliberately paused here.** A "prefer everyone facing the camera"
-      rule (Apple reports head direction) was considered and rejected: the phone can't tell
-      an intentional look — a couple looking at each other on purpose — from a glance
-      away, so it would trade posed-shot mistakes for candid-shot ones. Choosing between
-      good shots is taste and intent, left to the AI step; until then the chat frames the
-      pick as "my top pick … whether you agree".
-      Not yet: an order for the rest of the set, landscape/framing
-      signals, or a check across many sets that the pick matches what the user would keep.
 - [ ] Cloud AI integration for judgment calls (first task: the backend relay for the API key)
 
 ## Decision log
@@ -337,8 +334,8 @@ record, not unmerged work.
   cloud AI milestone; required before TestFlight/App Store. For development on the
   developer's own phone only, a local, never-committed key is acceptable.
 - **"Top pick": offline by default, Claude on request (direction agreed; details open).**
-  Each duplicate set shows one *top pick* — today chosen on the phone (sharpest, eyes
-  open). In the set's sheet it's first with a ★ "Top pick" badge; the chat says "Here's my
+  Each duplicate set shows one *top pick* — today chosen on the phone (see the "Top pick"
+  status entry). In the set's sheet it's first with a ★ "Top pick" badge; the chat says "Here's my
   top pick from each — … whether you agree." It's labelled "top pick", not "best",
   because the choice may later come from Claude and the user's stated taste.
   - **Offline pick = the free default and the gate.** It handles objective flaws (blur,
