@@ -228,6 +228,34 @@ record, not unmerged work.
       users can find Photos → Albums → Recently Deleted themselves.
 - [ ] Cloud AI integration for judgment calls (first task: the backend relay for the API key)
 
+## Before TestFlight / App Store (checklist)
+Items scattered through this brief that must be settled before anyone else uses the app.
+Details live in the linked sections; this list is so none are missed.
+
+**Must do:**
+- [ ] **Paid Apple Developer Program** ($99/yr) — required for TestFlight and the App Store
+      (see Toolchain). Until then the free account's 7-day app expiry applies.
+- [ ] **Backend relay for the Claude API key**, with **App Attest** (requests must come from
+      the real app) and **per-user rate limits** — the key must never ship inside the app
+      (see Decision Log → relay). Remove any local development key first.
+- [ ] **Photo file sizes:** the review's "about X MB" reads a value Photos keeps per file that
+      Apple doesn't officially document. Decide: switch to the fallback (estimate from pixel
+      dimensions) or accept the small App Store review risk (see `ReviewView.swift`).
+- [ ] **Hide the developer screens** — "Camera Roll" and "Debug: Clustering" in the chat's
+      toolbar, and the TEMPORARY diagnostic types in `PhotoClusterEngine.swift` — so users only
+      see the chat.
+- [ ] **Privacy disclosures once photos go to Claude:** App Store privacy labels, and telling
+      users in the app (with consent) that small thumbnails of a set are sent to Claude when
+      they ask for AI help. On-device features send nothing.
+- [ ] **Apple's privacy manifest:** check whether the app uses any APIs that Apple requires a
+      privacy-manifest reason for, and add one if so (not checked yet).
+
+**Revisit if needed (decided, but worth a second look with real users):**
+- [ ] **Grouping ignores photo orientation** — left as-is by decision (see the Top pick
+      status entry); recheck if users report the same shot in two orientations not grouping.
+- [ ] **Backwards dates** ("Oct 4 to Sep 26 2025") read as a year-long range — left as-is
+      by decision (see Decision Log).
+
 ## Decision log
 - **Apple's Moments API rejected as a session-grouping signal.** Checked
   `PHAssetCollection.fetchMoments` (the grouping behind the Photos app's old "Moments"
