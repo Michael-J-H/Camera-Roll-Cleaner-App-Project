@@ -205,11 +205,12 @@ record, not unmerged work.
       their side (the aesthetics score then favoured the landscape shot of the same scene).
       The quality checks (eyes, face quality, aesthetics) now get the tag. On-device check
       (Sep 26 – Oct 4, 2025): aesthetics scoring looked better but not perfect; the effect of
-      the orientation fix was hard to judge by eye — kept because it's correct regardless. **Open item:** the
-      grouping step (feature prints) still ignores it, unchanged so far because fixing it
-      could change which photos count as duplicates — it may be behind the known
-      portrait/landscape mismatch limitation. Needs its own before/after check on the debug
-      screen.
+      the orientation fix was hard to judge by eye — kept because it's correct regardless. **Grouping (feature prints) still ignores the
+      tag — left as-is by decision.** Same-scene shots in different orientations grouped fine
+      on the trip photos but not on quick indoor test shots (likely the 60-second window,
+      close-up framing, or line-heavy indoor scenes — not measured). Fine-tuning grouping
+      risked an open-ended effort and could disturb results that work, so it's deferred:
+      the AI step may handle "same moment" judgments better.
       Sharpness-only picking was replaced for people photos after it chose a sharp but
       awkward mid-movement shot (a couple sliding off a rock) over ones of them sitting and
       smiling at the camera. Faces are judged on a larger copy of the photo (2048px instead

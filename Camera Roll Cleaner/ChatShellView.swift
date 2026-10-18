@@ -587,6 +587,7 @@ private struct RangeCalendarSheet: View {
 
 struct ChatShellView: View {
     @StateObject private var viewModel = ChatViewModel()
+    @FocusState private var isTyping: Bool
 
     var body: some View {
         // Chat is the app's landing screen, so this is the one place that
@@ -623,9 +624,24 @@ struct ChatShellView: View {
                 HStack {
                     // Grows to show up to 5 lines (then scrolls), like Messages,
                     // so a longer request can be read back before sending.
+                    //
+                    // The whole box responds to a tap, and it's at least 44pt
+                    // tall (Apple's minimum for anything tappable). With the
+                    // built-in rounded style, only the line of text itself
+                    // responded — taps near the box's edges did nothing, so it
+                    // took a few tries to start typing.
                     TextField("Message", text: $viewModel.draftText, axis: .vertical)
                         .lineLimit(1...5)
-                        .textFieldStyle(.roundedBorder)
+                        .focused($isTyping)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .frame(minHeight: 44)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .strokeBorder(Color(.separator))
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture { isTyping = true }
                     Button("Send") { viewModel.sendDraft() }
                         .disabled(viewModel.draftText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
