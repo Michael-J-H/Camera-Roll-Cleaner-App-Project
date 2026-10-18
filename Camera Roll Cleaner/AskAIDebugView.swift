@@ -86,6 +86,8 @@ struct AskAIDebugView: View {
 
     @State private var savedKey = OpenRouterKey.load()
     @State private var keyDraft = ""
+    @State private var keyError: String?
+    @State private var confirmingKeyRemoval = false
 
     private struct ViewerStart: Identifiable, Hashable {
         let index: Int
@@ -268,15 +270,32 @@ struct AskAIDebugView: View {
                     .autocorrectionDisabled()
                 Button("Save key") {
                     let key = keyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    OpenRouterKey.save(key)
+                    keyError = OpenRouterKey.save(key)
                     savedKey = OpenRouterKey.load()
-                    keyDraft = ""
+                    // Kept on failure, so it can be tried again without re-pasting.
+                    if keyError == nil { keyDraft = "" }
                 }
                 .disabled(keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                if let keyError {
+                    Text(keyError)
+                        .font(.footnote)
+                        .foregroundStyle(.red)
+                }
             } else {
+                // Asks first: this button sits just under the results, where a
+                // stray tap while scrolling once removed the key unnoticed.
                 Button("Remove saved key", role: .destructive) {
-                    OpenRouterKey.delete()
-                    savedKey = nil
+                    confirmingKeyRemoval = true
+                }
+                .confirmationDialog("Remove the saved OpenRouter key?", isPresented: $confirmingKeyRemoval, titleVisibility: .visible) {
+                    Button("Remove key", role: .destructive) {
+                        OpenRouterKey.delete()
+                        savedKey = nil
+                        keyError = nil
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("You'll need to paste it in again to use Ask AI. OpenRouter only shows a key once, so make sure you have a copy.")
                 }
             }
         } header: {
@@ -682,11 +701,21 @@ private enum OpenRouterKey {
         return String(data: data, encoding: .utf8)
     }
 
-    static func save(_ key: String) {
+    /// Saves the key, then reads it back to be sure. Returns a message to
+    /// show if that failed, nil if it worked.
+    static func save(_ key: String) -> String? {
         delete()
         var item = query
         item[kSecValueData as String] = Data(key.utf8)
-        SecItemAdd(item as CFDictionary, nil)
+        let status = SecItemAdd(item as CFDictionary, nil)
+        guard status == errSecSuccess else {
+            let reason = SecCopyErrorMessageString(status, nil) as String? ?? "unknown reason"
+            return "Couldn't save the key (Keychain error \(status): \(reason)). Try again."
+        }
+        guard load() == key else {
+            return "The key seemed to save but couldn't be read back. Try again."
+        }
+        return nil
     }
 
     static func delete() {
