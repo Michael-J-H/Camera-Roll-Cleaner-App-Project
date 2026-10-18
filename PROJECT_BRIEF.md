@@ -294,10 +294,26 @@ record, not unmerged work.
         worked, and so did leaving out closed eyes (fewer photos). The error details showed
         why: OpenRouter had sent Claude to **Google's** cloud copy of it, which rejected the
         first photo's file type ("media_type: Input should be 'image/jpeg'…") — Anthropic's
-        own limits allow these requests (100 images, 32 MB).
+        own limits allow these requests (100 images, 32 MB). Claude models are now sent to Anthropic only
+        (OpenRouter's `only: ["anthropic"]`), which matches the shipping plan of calling
+        Anthropic directly — **but the same error then came back from Anthropic itself**, so
+        it depends on request size inside OpenRouter's conversion, not on who runs Claude.
+        **Fix (tested on device):** a 4 MB budget for the photos in one request (a guess
+        below what failed); over it, JPEG quality drops, then photo size, until it fits.
+        Each run shows the size and quality actually sent. The lake set's whole set then
+        went through as 20 photos at 768px, quality 0.60, 3.3 MB.
+        Recheck when calling Anthropic directly — this looks like an OpenRouter quirk.
+        **Side note for the real AI step:** in wide shots like the lake set, faces are only
+        ~40px across even at 1024px; sending a crop around the people (the phone already
+        knows where the faces are) may judge expressions better and cost less.
       - **First results (Oct 2026):** every model tried except Qwen 3.8 Flash handled the
         backstop test on the lake set. Qwen kept the phone's objectively bad ★, with a reason
         that echoed the phone's own logic.
+      - **After the blink fix — lake set, whole set (20 photos, 768px):** the ★ is now a
+        good shot, and both Claude Haiku 5.5 and Sonnet 5.5 confirmed it with sound reasons
+        (both looking at the camera, smiling, nothing cut off). Haiku: 7.0s, 12,623 input
+        tokens, $0.0014. Sonnet: 7.5s, same tokens, $0.026 — about 19× Haiku for the same
+        answer here. One set only; the preference test and more sets are still to run.
       - Then build the app's AI step for the chosen model, behind the backend relay (first
         task), from current Anthropic/provider docs — not from memory.
 

@@ -80,6 +80,8 @@ struct AskAIDebugView: View {
     @State private var otherModel = ""
     @State private var smallImages = false
     @State private var results: [ModelResult] = []
+    /// How the last round's photos were actually sent (size, quality).
+    @State private var sentSummary: String?
     @State private var viewerStart: ViewerStart?
 
     @State private var savedKey = OpenRouterKey.load()
@@ -122,7 +124,7 @@ struct AskAIDebugView: View {
         if !hasPeople {
             lines.append("No faces in this set — the real AI step will only handle sets with people.")
         }
-        lines.append("Tap a photo to see it full size. Images are sent at \(smallImages ? 512 : 1024)px.")
+        lines.append("Tap a photo to see it full size. Images are sent at up to \(smallImages ? 512 : 1024)px — shrunk only if a request would be too big.")
         return lines.joined(separator: " ")
     }
 
@@ -253,7 +255,8 @@ struct AskAIDebugView: View {
             Text("Results")
         } footer: {
             let spent = results.compactMap { $0.outcome?.answer?.cost }.reduce(0, +)
-            Text("This round cost about $\(String(format: "%.4f", spent)) (as reported by OpenRouter).")
+            Text((sentSummary.map { $0 + " " } ?? "")
+                 + "This round cost about $\(String(format: "%.4f", spent)) (as reported by OpenRouter).")
         }
     }
 
@@ -353,14 +356,17 @@ struct AskAIDebugView: View {
         let wish = preference.trimmingCharacters(in: .whitespacesAndNewlines)
         let size: CGFloat = smallImages ? 512 : 1024
         results = models.map { ModelResult(model: $0, sent: sent) }
+        sentSummary = nil
 
         Task {
             // Photos are prepared once and the same images go to every model.
-            let images = await AskAIClient.prepareImages(sent, longestSide: size)
-            guard images.count == sent.count else {
+            guard let prepared = await AskAIClient.prepareImages(sent, longestSide: size),
+                  prepared.jpegs.count == sent.count else {
                 for i in results.indices { results[i].outcome = .failed("Couldn't load every photo (iCloud?).") }
                 return
             }
+            sentSummary = prepared.summary
+            let images = prepared.jpegs
             // One request per model, all running at the same time.
             for model in models {
                 Task {
@@ -470,12 +476,37 @@ private enum AskAIClient {
         "additionalProperties": false,
     ]
 
+    /// The photos as sent, and how they ended up being sent.
+    struct PreparedImages {
+        let jpegs: [Data]
+        let longestSide: Int
+        let quality: Double
+        /// The photos' share of the request once encoded as text (base64).
+        var requestBytes: Int { jpegs.reduce(0) { $0 + ($1.count + 2) / 3 * 4 } }
+        var summary: String {
+            "Sent \(jpegs.count) photos at \(longestSide)px, JPEG quality \(String(format: "%.2f", quality)) — "
+                + ByteCountFormatter.string(fromByteCount: Int64(requestBytes), countStyle: .file) + " of photos in the request."
+        }
+    }
+
+    /// JUDGMENT CALL: whole sets at 1024px failed through OpenRouter — even
+    /// sent to Anthropic itself — with "media_type: Input should be
+    /// 'image/jpeg'…", while the same photos at 512px, or fewer photos at
+    /// 1024px, worked. So it depends on request size, inside OpenRouter's
+    /// conversion (the app always labels photos image/jpeg, and Anthropic's
+    /// own limit is 32 MB). The real line isn't published; 4 MB is a guess
+    /// below what failed — the summary shown after each run is how to find
+    /// out. Photos are only shrunk when a request would go over it.
+    private static let requestBudget = 4_000_000
+
     /// Loads each photo, turns it upright and shrinks it so its longest side
     /// is `longestSide` pixels, then encodes it as JPEG. Upright matters:
     /// iPhone photos are often stored sideways with a "rotate when
-    /// displaying" tag, which an AI model may ignore.
-    static func prepareImages(_ assets: [PHAsset], longestSide: CGFloat) async -> [Data] {
-        var images: [Data] = []
+    /// displaying" tag, which an AI model may ignore. If all of them
+    /// together go over `requestBudget`, lower JPEG quality is tried first,
+    /// then smaller sizes, until they fit.
+    static func prepareImages(_ assets: [PHAsset], longestSide: CGFloat) async -> PreparedImages? {
+        var uprights: [UIImage] = []
         for asset in assets {
             let options = PHImageRequestOptions()
             options.isNetworkAccessAllowed = true // photos stored only in iCloud
@@ -491,19 +522,33 @@ private enum AskAIClient {
                     continuation.resume(returning: image)
                 }
             }
-            guard let image else { continue }
-            let scale = min(1, longestSide / max(image.size.width, image.size.height))
-            let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
-            let format = UIGraphicsImageRendererFormat()
-            format.scale = 1
-            let upright = UIGraphicsImageRenderer(size: size, format: format).image { _ in
-                image.draw(in: CGRect(origin: .zero, size: size))
-            }
-            if let jpeg = upright.jpegData(compressionQuality: 0.8) {
-                images.append(jpeg)
-            }
+            guard let image else { return nil }
+            uprights.append(resized(image, longestSide: longestSide))
         }
-        return images
+
+        let steps: [(side: CGFloat, quality: Double)] = [
+            (longestSide, 0.8), (longestSide, 0.6), (896, 0.6), (768, 0.6), (640, 0.6), (512, 0.6),
+        ].filter { $0.side <= longestSide }
+        var prepared: PreparedImages?
+        for step in steps {
+            let images = step.side == longestSide ? uprights : uprights.map { resized($0, longestSide: step.side) }
+            prepared = PreparedImages(jpegs: images.compactMap { $0.jpegData(compressionQuality: step.quality) },
+                                      longestSide: Int(step.side), quality: step.quality)
+            if let prepared, prepared.requestBytes <= requestBudget { break }
+        }
+        return prepared // the smallest step, if even that didn't fit
+    }
+
+    /// Redrawn upright (orientation tag applied) with the longest side at
+    /// most `longestSide` pixels.
+    private static func resized(_ image: UIImage, longestSide: CGFloat) -> UIImage {
+        let scale = min(1, longestSide / max(image.size.width, image.size.height))
+        let size = CGSize(width: (image.size.width * scale).rounded(), height: (image.size.height * scale).rounded())
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
     }
 
     /// One request to one model. Written from OpenRouter's docs (Oct 2026):
@@ -517,6 +562,19 @@ private enum AskAIClient {
             content.append(["type": "image_url",
                             "image_url": ["url": "data:image/jpeg;base64," + jpeg.base64EncodedString()]])
         }
+        // Only send to a provider of this model that supports the
+        // structured-output setting below, rather than one that ignores it.
+        var provider: [String: Any] = ["require_parameters": true]
+        if model.hasPrefix("anthropic/") {
+            // Claude only from Anthropic itself. OpenRouter also sends Claude
+            // to Google's and Amazon's cloud copies of it, and Google's
+            // rejected whole sets ("media_type: Input should be
+            // 'image/jpeg'…") that Anthropic's own limits allow. The shipping
+            // app will call Anthropic directly, so this also tests what we'll
+            // actually use. If Anthropic is down, the request fails rather
+            // than quietly going elsewhere.
+            provider["only"] = ["anthropic"]
+        }
         let body: [String: Any] = [
             "model": model,
             "messages": [
@@ -527,9 +585,7 @@ private enum AskAIClient {
                 "type": "json_schema",
                 "json_schema": ["name": "photo_choice", "strict": true, "schema": answerSchema],
             ],
-            // Only send to a provider of this model that supports the
-            // structured-output setting above, rather than one that ignores it.
-            "provider": ["require_parameters": true],
+            "provider": provider,
         ]
 
         var request = URLRequest(url: endpoint, timeoutInterval: 180) // whole sets take a while
