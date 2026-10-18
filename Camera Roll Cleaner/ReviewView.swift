@@ -153,6 +153,9 @@ struct ReviewView: View {
     @State private var isDeleting = false
     @State private var confirmingDeleteAll = false
     @State private var errorMessage: String?
+    #if DEBUG
+    @State private var askingAI = false
+    #endif
     @Environment(\.displayScale) private var displayScale
 
     private struct ViewerStart: Identifiable, Hashable {
@@ -184,7 +187,25 @@ struct ReviewView: View {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Close", systemImage: "xmark", action: onClose)
                     }
+                    #if DEBUG
+                    // Developer test tool only — see AskAIDebugView.swift.
+                    // Not in Release (TestFlight / App Store) builds.
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Ask AI", systemImage: "sparkles") { askingAI = true }
+                    }
+                    #endif
                 }
+                #if DEBUG
+                .sheet(isPresented: $askingAI) {
+                    AskAIDebugView(
+                        rankedPhotos: set.ranked.map(\.asset).filter { !session.deletedIDs.contains($0.localIdentifier) },
+                        blinkChecks: Dictionary(uniqueKeysWithValues: set.ranked.compactMap { c in
+                            c.blinkCheck.map { (c.asset.localIdentifier, $0) }
+                        }),
+                        hasPeople: set.ranked.contains { !$0.faceQualities.isEmpty }
+                    )
+                }
+                #endif
                 .safeAreaInset(edge: .bottom) { bottomBar }
                 .navigationDestination(item: $viewerStart) { start in
                     AssetDetailView(

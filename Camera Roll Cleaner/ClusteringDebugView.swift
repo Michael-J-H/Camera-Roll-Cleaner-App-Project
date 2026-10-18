@@ -152,11 +152,11 @@ struct ClusteringDebugView: View {
                         Text("Face quality: \(cluster.representative.faceQualities.map { String(format: "%.2f", $0) }.joined(separator: ", "))")
                             .font(.caption2)
                     }
-                    if let eyes = cluster.representative.eyesOpenScore {
-                        Text("Eyes-open score: \(String(format: "%.2f", eyes))")
+                    if let blink = cluster.representative.blinkCheck {
+                        Text("Blink check: \(blink.blinking) of \(blink.faces) faces with closed eyes")
                             .font(.caption2)
                     } else {
-                        Text("No face detected")
+                        Text("Blink check: no face found")
                             .font(.caption2)
                     }
                 }

@@ -161,6 +161,16 @@ record, not unmerged work.
       deleted. Ranking rules, in order:
       1. Photos where *anyone's* eyes are closed go below the rest — checked per person,
          since averaging everyone's eyes let one person's open eyes hide another's blink.
+         **Blinks now come from Apple's own blink detector** (Core Image's face detector
+         with its eye-blink option, run on the upright 2048px copy) — **tested on device
+         (Oct 2026):** the lake set's ★ moved to a good shot of both looking at the camera,
+         and its top 5 are the ones the developer would pick. Eyes looking down/away can
+         read as a blink — harmless, since those shots aren't keepers either. It replaced a hand-made rule (height ÷ width of the eye outline, under
+         0.2 = closed) which the AI test tool exposed in Oct 2026: on the lake set, both
+         smiling at the camera scored 0.18 ("closed" — a smile squints the eyes) while
+         looking at each other scored 0.34 ("open"), so the best shot sank to the bottom
+         and the ★ went to a not-looking-at-camera shot. Apple's detector can miss
+         side-on faces; those photos simply count as no blink.
       2. **Sets with people:** best combined *face capture quality* — Apple's on-device score
          for choosing the best of several shots of the same people (pose, expression, focus,
          lighting). A face missing from a photo counts as zero there. Near-equal face scores
@@ -182,7 +192,7 @@ record, not unmerged work.
       close-up framing, or line-heavy indoor scenes — not measured); fine-tuning grouping
       risked an open-ended effort and could disturb results that work, so it's deferred to
       the AI step.
-      **History:** sharpness alone picked a sharp but awkward mid-movement shot (a couple
+      **History:** (the eyes rule above was the "check Apple first" lesson again.) Sharpness alone picked a sharp but awkward mid-movement shot (a couple
       sliding off a rock) over ones of them sitting and smiling at the camera → face quality
       added; one person's blink was missed → per-person eye check and larger face images;
       aesthetics score added later. On-device check (Sep 26 – Oct 4, 2025): better but not
@@ -247,6 +257,47 @@ record, not unmerged work.
            mountain behind us looks best", "both of us laughing"), does the AI return the
            photo that best matches it? A few sets, judged by the developer by eye. This is a
            capability to choose a model for, not something to design.
+      - **Test tool built and working on device** (branch `ai-test-openrouter`,
+        `AskAIDebugView.swift`): "Ask AI" (✨) in the review's top bar. It sends photos of the
+        set on screen, in the phone's ranking order (photo 1 = the ★), to any ticked models at
+        once and shows each one's pick, reason, time and cost. Which photos: the phone's top
+        N (2–8, default 5) or the whole set (capped at 30), optionally leaving out photos with
+        closed eyes (same rule as the phone's ranking; nothing is left out if fewer than 2
+        would remain). An empty
+        preference runs the backstop test; a typed one runs the preference test. Photos go at
+        1024px (512px option), turned upright, as JPEG. The answer is only shown — it never
+        moves the ★ or changes Keep/Delete. Models offered (OpenRouter's list, Oct 18 2026,
+        per million tokens in/out): Claude Haiku 5.5 ($0.10/$0.50), Claude Sonnet 5.5
+        ($2/$10), GPT-6 Luna Pro ($0.10/$0.50), Gemini 3.8 Flash ($0.83/$4.12), Qwen 3.8
+        Flash ($0.15/$0.47), plus any other model id typed in. The OpenRouter key is pasted
+        in once and kept in the phone's Keychain — never in a project file. All of it is
+        `#if DEBUG`, so Release (TestFlight/App Store) builds leave it out (checked: no
+        OpenRouter text in the Release app).
+      - **What the backstop looks for** (in the question sent to the AI): a ★ is overridden
+        only for a clear flaw when another photo is clearly better — eyes closed, someone not
+        looking at the camera while others are, awkward expression or pose, someone cut off by
+        the frame edge, someone blocked, motion blur / out of focus. A clearly crooked
+        horizon or frame only decides between otherwise-equal photos (it's easy to
+        straighten); small composition differences are taste, not flaws — taste is what the
+        preference test is for.
+      - **Open question — top few or the whole set?** The original plan sent only the
+        phone's top few. The developer's concern: the phone ranks mainly by Apple's face
+        quality score, so if that's wrong for a set, its whole top 8 may be wrong the same
+        way. Counter-concern: AI accuracy drops with many near-identical photos, and bursts
+        can be huge. Suggested middle ground: the phone only removes objective rejects
+        (closed eyes, later maybe blur), everything else goes to the AI, with a cap. To be
+        settled by testing the lake set (22 photos) with top 5 vs. whole set vs. whole set
+        without closed eyes.
+      - **The Ask AI screen shows the blink check under each photo** ("open 2/2", red
+        "blink 1/2 ✕", or "no face") so it can be judged by eye.
+      - **Whole sets failed on Claude at 1024px** ("Provider returned error"); 512px
+        worked, and so did leaving out closed eyes (fewer photos). The error details showed
+        why: OpenRouter had sent Claude to **Google's** cloud copy of it, which rejected the
+        first photo's file type ("media_type: Input should be 'image/jpeg'…") — Anthropic's
+        own limits allow these requests (100 images, 32 MB).
+      - **First results (Oct 2026):** every model tried except Qwen 3.8 Flash handled the
+        backstop test on the lake set. Qwen kept the phone's objectively bad ★, with a reason
+        that echoed the phone's own logic.
       - Then build the app's AI step for the chosen model, behind the backend relay (first
         task), from current Anthropic/provider docs — not from memory.
 
@@ -257,7 +308,9 @@ Details live in the linked sections; this list is so none are missed.
 **Must do:**
 - [ ] **Paid Apple Developer Program** ($99/yr) — required for TestFlight and the App Store
       (see Toolchain). Until then the free account's 7-day app expiry applies.
-- [ ] **Remove the OpenRouter test code** (the debug-only "Ask AI" button and its key file);
+- [ ] **Remove the OpenRouter test code** (`AskAIDebugView.swift` and the "Ask AI" button in
+      `ReviewView.swift`; it's debug-only, but delete it anyway) and remove the saved key
+      from the phone ("Remove saved key" in that screen) or revoke it on openrouter.ai;
       the shipping app talks to one AI company directly.
 - [ ] **Backend relay for the Claude API key**, with **App Attest** (requests must come from
       the real app) and **per-user rate limits** — the key must never ship inside the app

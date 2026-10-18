@@ -27,7 +27,8 @@ struct ClusterCandidate {
     let asset: PHAsset
     let featurePrint: VNFeaturePrintObservation
     let sharpness: Double
-    let eyesOpenScore: Double? // nil = no face detected in this photo
+    /// Apple's blink detector's result — nil when it found no faces.
+    let blinkCheck: BlinkCheck?
     /// Apple's face capture quality (0–1, higher = better) for each face
     /// found — empty when there are no faces. See rank(_:).
     let faceQualities: [Double]
@@ -103,7 +104,6 @@ nonisolated enum PhotoClusterEngine {
     private static let featurePrintDistanceThreshold: Float = 0.45
     private static let maxTimeGapSeconds: TimeInterval = 60
     private static let maxLocationDistanceMeters: Double = 100
-    private static let closedEyeThreshold: Double = 0.2
     private static let workingImageSize = CGSize(width: 512, height: 512)
     /// Photos with faces get their faces re-checked at this larger size: in
     /// a wide shot, faces at 512px are only ~20–30px across — too small to
@@ -180,7 +180,11 @@ nonisolated enum PhotoClusterEngine {
             // small-image results rather than dropping the photo.
             var faceResults = faceRequest.results
             var faceQualityResults = faceQualityRequest.results
-            if !(faceResults ?? []).isEmpty,
+            let hasFaces = !(faceResults ?? []).isEmpty
+            // Blinks are checked on the same larger copy when there is one.
+            var blinkImage = cgImage
+            var blinkOrientation = upright
+            if hasFaces,
                let detailedImage = await loadImage(for: asset, targetSize: faceDetailImageSize),
                let detailed = detailedImage.cgImage {
                 let detailFaces = VNDetectFaceLandmarksRequest()
@@ -191,14 +195,18 @@ nonisolated enum PhotoClusterEngine {
                     faceResults = detailFaces.results
                     faceQualityResults = detailQuality.results
                 }
+                blinkImage = detailed
+                blinkOrientation = detailUpright
             }
+            // Only photos where Vision found faces are checked for blinks.
+            let blinkCheck = hasFaces ? PhotoQualityScorer.blinkCheck(in: blinkImage, orientation: blinkOrientation) : nil
 
             candidates.append(
                 ClusterCandidate(
                     asset: asset,
                     featurePrint: featurePrint,
                     sharpness: PhotoQualityScorer.sharpnessScore(for: image),
-                    eyesOpenScore: PhotoQualityScorer.eyesOpenScore(from: faceResults),
+                    blinkCheck: blinkCheck,
                     faceQualities: (faceQualityResults ?? []).compactMap { $0.faceCaptureQuality.map(Double.init) },
                     aestheticsScore: aestheticsScore,
                     creationDate: asset.creationDate,
@@ -439,9 +447,10 @@ nonisolated enum PhotoClusterEngine {
     /// Step by step, not a blended score — easier to explain and check by
     /// eye than an arbitrary blend of unrelated numbers:
     ///
-    /// 1. Rule out photos where anyone's eyes are clearly closed (unless
-    ///    that would rule out the whole set — a flawed photo beats no
-    ///    candidate at all).
+    /// 1. Rule out photos where anyone's eyes are closed, according to
+    ///    Apple's blink detector (unless that would rule out the whole set
+    ///    — a flawed photo beats no candidate at all). An earlier hand-made
+    ///    rule read smiling eyes as closed; see PhotoQualityScorer.blinkCheck.
     /// 2. **Sets with people:** pick the best combined face capture quality.
     ///    That's Apple's own on-device score, made for choosing the best of
     ///    several shots of the same people — it weighs pose (facing the
@@ -476,7 +485,7 @@ nonisolated enum PhotoClusterEngine {
             let face = (c.faceQualities.reduce(0, +) / Double(mostFaces) / 0.05).rounded() * 0.05
             return (face, aesthetics, c.sharpness)
         }
-        func eyesOpen(_ c: ClusterCandidate) -> Bool { (c.eyesOpenScore ?? 1.0) >= closedEyeThreshold }
+        func eyesOpen(_ c: ClusterCandidate) -> Bool { (c.blinkCheck?.blinking ?? 0) == 0 }
         return members.sorted { a, b in
             if eyesOpen(a) != eyesOpen(b) { return eyesOpen(a) }
             return score(a) > score(b)

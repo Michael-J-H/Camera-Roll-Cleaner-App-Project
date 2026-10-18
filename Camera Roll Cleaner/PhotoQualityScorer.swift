@@ -7,20 +7,27 @@
 //  calling any cloud AI. Two independent signals:
 //
 //  - Sharpness: how in-focus/blurry the photo is.
-//  - Eyes-open: if there's a face, are the eyes open or closed (blinking)?
+//  - Blinks: is anyone's eye closed? This uses Apple's own blink detector
+//    (Core Image), not a rule of ours — see blinkCheck.
 //
-//  JUDGMENT CALL: Vision does not provide a built-in "how sharp is this
-//  photo" score or an "are the eyes open" score — Apple doesn't ship
-//  either as a request type. Both are implemented here using standard,
-//  widely-used computer-vision heuristics, not an Apple-provided or
-//  Apple-validated metric. The numbers these produce are only meaningful
-//  compared against other photos in the same cluster (which is all this
-//  app needs them for), not as some universal 0-100 "quality score".
+//  JUDGMENT CALL: Apple doesn't ship a "how sharp is this photo" score, so
+//  sharpness is a standard, widely-used computer-vision technique written
+//  here by hand. Its numbers are only meaningful compared against other
+//  photos in the same cluster (which is all this app needs), not as some
+//  universal 0-100 "quality score".
 //
 
 import CoreGraphics
+import CoreImage
 import UIKit
-import Vision
+
+/// What Apple's blink detector found in one photo.
+nonisolated struct BlinkCheck: Sendable {
+    /// Faces it found (it can miss faces Vision finds, e.g. side-on ones).
+    let faces: Int
+    /// Of those, faces with at least one eye closed.
+    let blinking: Int
+}
 
 enum PhotoQualityScorer {
     /// Higher = sharper. Only meaningful compared against another photo
@@ -59,45 +66,29 @@ enum PhotoQualityScorer {
         return variance
     }
 
-    /// nil means no face was found in the photo (nothing to score — not
-    /// the same as "eyes closed"). Otherwise, roughly: below ~0.15-0.2
-    /// tends to mean closed/blinking, higher means open. The exact cutoff
-    /// used elsewhere (see PhotoClusterEngine) is a judgment call, tuned
-    /// by eye rather than measured against labeled photos.
+    /// Apple's own blink detector — Core Image's face detector with its
+    /// eye-blink option — run on the photo the right way up. nil if it found
+    /// no faces (for example everyone turned away), which is not the same
+    /// as "eyes closed".
     ///
-    /// The score is the **least open** face in the photo (each face being
-    /// the average of its two eyes), so one person blinking marks the whole
-    /// photo. An earlier version averaged every eye in the photo together,
-    /// and one person's wide-open eyes hid the other's closed ones.
-    static func eyesOpenScore(from faceObservations: [VNFaceObservation]?) -> Double? {
-        guard let faces = faceObservations, !faces.isEmpty else { return nil }
-
-        var perFace: [Double] = []
-        for face in faces {
-            guard let landmarks = face.landmarks else { continue }
-            var eyes: [Double] = []
-            if let left = landmarks.leftEye { eyes.append(eyeOpenRatio(left)) }
-            if let right = landmarks.rightEye { eyes.append(eyeOpenRatio(right)) }
-            if !eyes.isEmpty { perFace.append(eyes.reduce(0, +) / Double(eyes.count)) }
-        }
-        return perFace.min()
+    /// This replaced a hand-made rule (height ÷ width of the eye outline
+    /// from Vision, under 0.2 = closed) that misread real photos: a smile
+    /// squints the eyes, so smiling at the camera scored 0.18 ("closed"),
+    /// while eyes seen side-on, looking at each other, scored 0.34
+    /// ("open") — which pushed the best shot of the lake set to the bottom.
+    static func blinkCheck(in cgImage: CGImage, orientation: CGImagePropertyOrientation) -> BlinkCheck? {
+        let faces = (blinkDetector?.features(in: CIImage(cgImage: cgImage), options: [
+            CIDetectorImageOrientation: Int(orientation.rawValue), // EXIF number, which Core Image expects
+            CIDetectorEyeBlink: true,
+        ]) ?? []).compactMap { $0 as? CIFaceFeature }
+        guard !faces.isEmpty else { return nil }
+        return BlinkCheck(faces: faces.count, blinking: faces.filter { $0.leftEyeClosed || $0.rightEyeClosed }.count)
     }
 
-    /// Height-to-width ratio of the eye outline Vision detects. A wide,
-    /// short shape (low ratio) reads as closed/squinting; a taller shape
-    /// (higher ratio) reads as open. A simplified version of the "Eye
-    /// Aspect Ratio" technique used in blink-detection research — not an
-    /// Apple-provided calculation.
-    private static func eyeOpenRatio(_ region: VNFaceLandmarkRegion2D) -> Double {
-        let points = region.normalizedPoints
-        guard points.count > 1 else { return 1.0 }
-        let xs = points.map { Double($0.x) }
-        let ys = points.map { Double($0.y) }
-        let width = (xs.max() ?? 0) - (xs.min() ?? 0)
-        let height = (ys.max() ?? 0) - (ys.min() ?? 0)
-        guard width > 0 else { return 0 }
-        return height / width
-    }
+    /// Made once and reused — setting up the detector is the slow part.
+    private static let blinkDetector = CIDetector(
+        ofType: CIDetectorTypeFace, context: nil, options: [CIDetectorAccuracy: CIDetectorAccuracyHigh]
+    )
 
     private static func grayscalePixels(from image: UIImage, side: Int) -> [UInt8]? {
         guard let cgImage = image.cgImage else { return nil }
