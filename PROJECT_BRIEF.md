@@ -226,7 +226,27 @@ record, not unmerged work.
       **Recovering deleted photos is left to iOS (decided).** Apps can't see or restore items
       in Recently Deleted, and the developer chose not to add an in-app hint pointing there —
       users can find Photos → Albums → Recently Deleted themselves.
-- [ ] Cloud AI integration for judgment calls (first task: the backend relay for the API key)
+- [ ] Cloud AI integration for judgment calls — NEXT. Decided so far:
+      - **Scope:** the AI only handles **sets with people** (the phone already knows which
+        sets have faces). Landscapes, food and other sets keep the phone's top pick.
+      - **Teamwork:** the phone ranks every photo and filters; the AI makes the final call
+        among the phone's top few, so it never weighs blurry or blinking shots and fewer
+        photos are sent.
+      - **One AI company, called directly when shipping** — no third-party router. OpenRouter
+        may be used only for the Mac-side model comparison, never in the app.
+      - **Choosing the model — two tests,** on the developer's real photos (Sep 26 – Oct 4,
+        2025), exported from a debug-only screen and run by a script on the Mac:
+        1. **Backstop test:** can the AI stop a ★ landing on a clearly bad people photo
+           (not looking at the camera, eyes closed, awkward faces) when better shots exist
+           (e.g. the 22-photo lake set)? The developer marks every photo they'd accept as
+           best in each people set; each approach (phone alone vs AI choosing among the
+           phone's top few) is scored on how often its pick is acceptable, plus cost per set.
+        2. **Preference test — the core AI use case:** given a plain-words preference ("the
+           mountain behind us looks best", "both of us laughing"), does the AI return the
+           photo that best matches it? A few sets, judged by the developer by eye. This is a
+           capability to choose a model for, not something to design.
+      - Then build the app's AI step for the chosen model, behind the backend relay (first
+        task), from current Anthropic/provider docs — not from memory.
 
 ## Before TestFlight / App Store (checklist)
 Items scattered through this brief that must be settled before anyone else uses the app.
