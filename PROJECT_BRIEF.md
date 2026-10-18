@@ -232,15 +232,17 @@ record, not unmerged work.
       - **Teamwork:** the phone ranks every photo and filters; the AI makes the final call
         among the phone's top few, so it never weighs blurry or blinking shots and fewer
         photos are sent.
-      - **One AI company, called directly when shipping** — no third-party router. OpenRouter
-        may be used only for the Mac-side model comparison, never in the app.
+      - **One AI company, called directly when shipping** — no third-party router. **OpenRouter
+        is used only for testing**: a debug-only "Ask AI" button in the review lets the
+        developer try several models on their own phone. It must not be in the shipping app.
       - **Choosing the model — two tests,** on the developer's real photos (Sep 26 – Oct 4,
-        2025), exported from a debug-only screen and run by a script on the Mac:
+        2025), run in the app via OpenRouter and judged by the developer by eye. The AI's job
+        in the backstop test is to *confirm* the phone's pick when it's acceptable and
+        *override* only when it's clearly bad — many photos can be "best"; the ★ just must
+        never be a bad one:
         1. **Backstop test:** can the AI stop a ★ landing on a clearly bad people photo
            (not looking at the camera, eyes closed, awkward faces) when better shots exist
-           (e.g. the 22-photo lake set)? The developer marks every photo they'd accept as
-           best in each people set; each approach (phone alone vs AI choosing among the
-           phone's top few) is scored on how often its pick is acceptable, plus cost per set.
+           (e.g. the 22-photo lake set)?
         2. **Preference test — the core AI use case:** given a plain-words preference ("the
            mountain behind us looks best", "both of us laughing"), does the AI return the
            photo that best matches it? A few sets, judged by the developer by eye. This is a
@@ -255,6 +257,8 @@ Details live in the linked sections; this list is so none are missed.
 **Must do:**
 - [ ] **Paid Apple Developer Program** ($99/yr) — required for TestFlight and the App Store
       (see Toolchain). Until then the free account's 7-day app expiry applies.
+- [ ] **Remove the OpenRouter test code** (the debug-only "Ask AI" button and its key file);
+      the shipping app talks to one AI company directly.
 - [ ] **Backend relay for the Claude API key**, with **App Attest** (requests must come from
       the real app) and **per-user rate limits** — the key must never ship inside the app
       (see Decision Log → relay). Remove any local development key first.
