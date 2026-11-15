@@ -72,7 +72,7 @@ struct AskAIDebugView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.displayScale) private var displayScale
 
-    @State private var sendCount = 5
+    @State private var sendCount = 10 // default chosen by the developer (Oct 2026)
     @State private var sendAll = false
     @State private var dropClosedEyes = false
     @State private var preference = ""
@@ -185,7 +185,7 @@ struct AskAIDebugView: View {
             }
             Toggle("Send the whole set", isOn: $sendAll)
             if !sendAll {
-                Stepper("Send the top \(min(sendCount, candidates.count))", value: $sendCount, in: 2...max(2, min(8, candidates.count)))
+                Stepper("Send the top \(min(sendCount, candidates.count))", value: $sendCount, in: 2...max(2, min(maxPhotos, candidates.count)))
                     .disabled(candidates.count <= 2)
             }
             Toggle("Leave out closed eyes", isOn: $dropClosedEyes)

@@ -261,7 +261,7 @@ record, not unmerged work.
         `AskAIDebugView.swift`): "Ask AI" (✨) in the review's top bar. It sends photos of the
         set on screen, in the phone's ranking order (photo 1 = the ★), to any ticked models at
         once and shows each one's pick, reason, time and cost. Which photos: the phone's top
-        N (2–8, default 5) or the whole set (capped at 30), optionally leaving out photos with
+        N (2–30, default 10) or the whole set (capped at 30), optionally leaving out photos with
         closed eyes (same rule as the phone's ranking; nothing is left out if fewer than 2
         would remain). An empty
         preference runs the backstop test; a typed one runs the preference test. Photos go at
@@ -280,7 +280,11 @@ record, not unmerged work.
         horizon or frame only decides between otherwise-equal photos (it's easy to
         straighten); small composition differences are taste, not flaws — taste is what the
         preference test is for.
-      - **Open question — top few or the whole set?** The original plan sent only the
+      - **Decided for now (Oct 2026): send the phone's top 10.** Now that the blink check
+        works, the lake set's top photos match the developer's own picks, so the phone's
+        ranking is a fair filter. Revisit if testers see the AI miss a better shot ranked
+        below 10. Background on the question:
+        The original plan sent only the
         phone's top few. The developer's concern: the phone ranks mainly by Apple's face
         quality score, so if that's wrong for a set, its whole top 8 may be wrong the same
         way. Counter-concern: AI accuracy drops with many near-identical photos, and bursts
@@ -314,6 +318,14 @@ record, not unmerged work.
         (both looking at the camera, smiling, nothing cut off). Haiku: 7.0s, 12,623 input
         tokens, $0.0014. Sonnet: 7.5s, same tokens, $0.026 — about 19× Haiku for the same
         answer here. One set only; the preference test and more sets are still to run.
+      - **Model choice deferred to testing with friends (developer's call, Oct 2026):** on
+        the developer's sets Haiku 5.5 and Sonnet 5.5 are evenly matched so far; Sonnet costs
+        ~19× more. Estimated per people set at the top-10 default (1024px ≈ 1,040 tokens
+        per photo by Anthropic's formula, checked against the measured runs): Haiku ≈
+        $0.0012, Sonnet ≈ $0.023. **Note:** friends test through TestFlight, which can't
+        include this OpenRouter tool (see checklist) — so the comparison there has to run
+        through the real AI step. Both models are Anthropic's, so the relay can offer both
+        (a hidden setting, or half the testers on each) without breaking "one AI company".
       - Then build the app's AI step for the chosen model, behind the backend relay (first
         task), from current Anthropic/provider docs — not from memory.
 
@@ -458,6 +470,13 @@ Details live in the linked sections; this list is so none are missed.
   come from the real app, plus per-user rate limits. Planned as the first task of the
   cloud AI milestone; required before TestFlight/App Store. For development on the
   developer's own phone only, a local, never-committed key is acceptable.
+- **The OpenRouter test key lives in the phone's Keychain, not in a project file (Nov 2026).**
+  A git-ignored `Secrets.xcconfig` read at build time was suggested and declined: the
+  test tool (`AskAIDebugView.swift`) already works with a key pasted into the app once
+  and kept in iOS's encrypted Keychain. A build-time file would add a key file that
+  could be committed by mistake, and would copy the key into the app itself (readable
+  from the installed app), for no gain. The shipping app needs no key at all — the
+  relay server holds it.
 - **"Top pick": offline by default, Claude on request (direction agreed; details open).**
   Each duplicate set shows one *top pick* — today chosen on the phone (see the "Top pick"
   status entry). In the set's sheet it's first with a ★ "Top pick" badge; the chat says "Here's my
