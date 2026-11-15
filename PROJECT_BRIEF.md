@@ -65,21 +65,24 @@ The actual planned UX:
   quality (that's a possible future feature, out of scope now). Since clustering already
   distinguishes single-photo clusters, this exclusion requires no new logic, just a filter.
 
-## AI architecture (planned, two-stage, for cost efficiency)
-1. **On-device clustering (free, offline):** Use Apple's Vision framework to generate feature
-   prints for each photo and compare them, combined with timestamp/location metadata, to group
-   likely-duplicate photos into clusters. No API calls, no cost, works offline.
-2. **Cloud AI judgment (paid, only for ambiguous clusters):** For clusters where it's genuinely
-   hard to tell algorithmically which photo is "best," send just that small cluster (a handful
-   of images) to a vision-capable Claude model for comparison, informed by what the user said
-   they want in the chat. Starting point: a cost-efficient model tier (e.g. Claude Haiku) rather
-   than a flagship model, since we're only calling it on small clusters, not the whole library.
-   Model choice/pricing should be re-verified against current Anthropic docs when this part is
-   actually built, since both change over time. **Checked Oct 2026:** Claude Haiku 5.5
-   (released Oct 7, 2026) lists $0.10 per million input / $0.50 per million output tokens,
-   so ranking ~100 small thumbnails is well under a cent. **Write the API code from the
-   current Anthropic docs, not from memory** — the model is new, and settings that worked
-   on Haiku 4.5 now return errors (e.g. sampling settings and assistant "prefill").
+## AI architecture (two-stage photo judgment, plus the AI as the chat's voice)
+1. **On-device clustering and ranking (free, offline):** Apple's Vision framework groups
+   likely duplicates (feature prints plus time and location), then ranks every photo in a
+   set — Apple's blink detector, face capture quality, aesthetics score, sharpness (see the
+   "Top pick" status entry). No API calls, no cost, works offline.
+2. **Cloud AI judgment (paid) — sets with people only:** the phone filters and ranks; the AI
+   makes the final call among the phone's **top 10**, so it never weighs blurry or blinking
+   shots. Landscapes, food and other sets keep the phone's pick. It confirms the phone's ★
+   unless it's clearly bad (backstop) or picks by a stated preference ("both of us
+   laughing"). Model: Claude Haiku 5.5 or Sonnet 5.5 — choice deferred to testing with
+   friends. Through OpenRouter while testing on the developer's phone; Anthropic directly,
+   behind the relay, before TestFlight. **Checked Oct 2026:** Haiku 5.5 lists $0.10 per
+   million input / $0.50 per million output tokens; Sonnet 5.5 $2 / $10. **Write the API
+   code from the current docs, not from memory** — settings that worked on Haiku 4.5 now
+   return errors (e.g. sampling settings and assistant "prefill").
+3. **The AI as the chat's voice (decided Nov 2026):** the AI answers typed messages and acts
+   through levers the app offers; fixed messages are written by us. See Decision Log → "The
+   AI is the conversational face".
 4. **Cost guardrails (revised Nov 2026 — see Decision Log → "The AI is the conversational
    face"):** the AI now also answers typed chat messages, so the guardrails are: fixed
    messages (greeting, "Scanning…", results) are written by us and cost nothing — the AI
@@ -90,7 +93,7 @@ The actual planned UX:
    re-send or re-judge a set already judged; consider a visible usage indicator. Text is
    cheap (~$0.0003–0.001 per message on Haiku, ~20× on Sonnet); photos are the main cost.
    *(Previously: AI only at decision points, never for general chat.)*
-3. Open-source/offline-only models were considered as an alternative to cloud AI for the judgment
+5. Open-source/offline-only models were considered as an alternative to cloud AI for the judgment
    step (better privacy, no per-use cost) but were deprioritized in favor of prototyping with
    cloud AI first to establish a quality baseline, revisiting later if cost or privacy warrants it.
 
@@ -105,6 +108,9 @@ The actual planned UX:
 - **Apple Developer Program ($99/yr)** — NOT needed yet. Only required later for TestFlight
   beta distribution or App Store submission. Free Apple ID is sufficient for building and
   testing on the developer's own device during development (7-day app expiry, reinstall as needed).
+- **OpenRouter account** — one key for many AI companies' models, used only for testing on
+  the developer's phone (the debug-only "Ask AI" tool, and next the AI chat). Set up Oct
+  2026 with $10 credit; the key lives in the phone's Keychain. Not in the shipping app.
 - **Anthropic API account** — needed when the app switches from OpenRouter to Anthropic
   directly (with the relay, before TestFlight); not yet set up. Set a monthly spending
   limit in the Anthropic Console.
@@ -132,8 +138,9 @@ record, not unmerged work.
       walking into/out of frame) — see Decision Log and code comments in
       `PhotoClusterEngine.swift` for the reasoning. Apple's `PHAssetCollection.fetchMoments`
       was evaluated as a possible cross-check signal and rejected (see Decision Log).
-- [x] Chat UI shell (basic text in/out) — `ChatShellView.swift`, iMessage-style bubbles,
-      placeholder canned replies only, no real logic wired in yet.
+- [x] Chat UI shell (basic text in/out) — `ChatShellView.swift`, iMessage-style bubbles.
+      Started with placeholder replies; it now runs the scripted date → scan → results flow
+      (entries below). Replies are still scripted — no AI in the chat yet.
 - [x] Date-range selection wired into chat, tested on device — the chat is now the app's
       home screen and runs: pick a date range → confirm → run clustering on that range →
       see the duplicate sets found. Two ways to give the range:
@@ -366,9 +373,12 @@ Details live in the linked sections; this list is so none are missed.
 - [ ] **Hide the developer screens** — "Camera Roll" and "Debug: Clustering" in the chat's
       toolbar, and the TEMPORARY diagnostic types in `PhotoClusterEngine.swift` — so users only
       see the chat.
-- [ ] **Privacy disclosures once photos go to Claude:** App Store privacy labels, and telling
-      users in the app (with consent) that small thumbnails of a set are sent to Claude when
-      they ask for AI help. On-device features send nothing.
+- [ ] **Explicit permission before anything goes to the AI** — Apple's App Review Guideline
+      5.1.2(i): apps must "clearly disclose where personal data will be shared with third
+      parties, including with third-party AI, and obtain explicit permission before doing
+      so." So a clear yes from the user (not just a notice) before the first photos **or
+      chat text** are sent to Claude; without it, the on-device features still work. Plus
+      the App Store privacy labels. On-device features send nothing.
 - [ ] **Apple's privacy manifest:** check whether the app uses any APIs that Apple requires a
       privacy-manifest reason for, and add one if so (not checked yet).
 
@@ -543,10 +553,10 @@ Details live in the linked sections; this list is so none are missed.
     labels like beach/mountain/sky, plus the face detection already run — a face filling
     the frame = selfie) narrows the sets, then Claude ranks only those; (3) should stated
     preferences be remembered across scans?
-  - **Cost estimate (re-verify against Anthropic's pricing/image-token docs when
-    building):** small thumbnails cost roughly 50–350 input tokens each; at Claude Haiku
-    5.5's listed $0.10 per million input tokens, ranking ~100 thumbnails is well under one
-    cent (a few cents on Sonnet 5.5). The "reasoning" isn't the expensive part — the
+  - **Cost estimate (measured Oct 2026):** a photo at 1024px is about 1,040 input tokens
+    (Anthropic's formula: width ÷ 28 × height ÷ 28, rounded up; 768px ≈ 590), which
+    matched OpenRouter's charges exactly. One set at the top-10 default ≈ $0.0012 on
+    Haiku 5.5, ≈ $0.023 on Sonnet 5.5. The "reasoning" isn't the expensive part — the
     number of photos sent is, so the design should send only sets that match.
 
 ## Notes for Claude Code
