@@ -112,7 +112,7 @@ The actual planned UX:
   testing on the developer's own device during development (7-day app expiry, reinstall as needed).
 - **OpenRouter account** — one key for many AI companies' models, used only for testing on
   the developer's phone (the debug-only "Ask AI" tool, and next the AI chat). Set up Oct
-  2026 with $10 credit; the key lives in the phone's Keychain. Not in the shipping app.
+  2026 with $5 credit; the key lives in the phone's Keychain. Not in the shipping app.
 - **Anthropic API account** — needed when the app switches from OpenRouter to Anthropic
   directly (with the relay, before TestFlight); not yet set up. Set a monthly spending
   limit in the Anthropic Console.
@@ -366,7 +366,9 @@ record, not unmerged work.
         the first pass for now, but its necessity there is an open question (one trip of
         mostly couple selfies after the blink fix may be an easy case; try trips with
         groups, kids, candid shots — **deferred**, the developer doesn't have such photos to
-        hand yet). Its clearer value may be taste and preferences in the
+        hand yet). **Also to test: a long range** (e.g. a whole summer) — does the wait, and
+        a row that's no longer in time order (people sets join the end), still feel right?
+        If not, "judge just ahead of the user" (in reserve) is the fix. Its clearer value may be taste and preferences in the
         chat. Decision Log → "Which sets the AI judges"). Right after a scan,
         `ReviewSession` sends each set with people to the AI, 5 sets at a time: photos with
         nobody's eyes closed, at most the phone's top 10, at 1024px (shrunk to fit the
@@ -400,12 +402,15 @@ Details live in the linked sections; this list is so none are missed.
 **Must do:**
 - [ ] **Paid Apple Developer Program** ($99/yr) — required for TestFlight and the App Store
       (see Toolchain). Until then the free account's 7-day app expiry applies.
-- [ ] **Remove the OpenRouter test code** (`AskAIDebugView.swift`, the "Ask AI" button in
-      `ReviewView.swift`, the "AI" link in `ChatShellView.swift`; it's debug-only, but delete
-      it anyway) and **point `OpenRouterClient.swift`'s job at the relay** — automatic
-      judging in `ReviewSession` calls it and remove the saved key
-      from the phone ("Remove saved key" in that screen) or revoke it on openrouter.ai;
-      the shipping app talks to one AI company directly.
+- [ ] **Remove the OpenRouter test code and switch to the relay.** The shipping app talks to
+      one AI company directly. Steps:
+      1. Delete the test screens: `AskAIDebugView.swift` (Ask AI and AI settings), the "Ask
+         AI" button in `ReviewView.swift`, and "AI settings" in the chat's Developer menu
+         (`ChatShellView.swift`). They're debug-only, but delete them anyway.
+      2. Replace `OpenRouterClient.swift` with a call to the relay. Automatic judging in
+         `ReviewSession` uses it, so it must keep working through the relay.
+      3. Remove the OpenRouter key from the phone ("Remove saved key" on the Ask AI
+         screen), or revoke it on openrouter.ai.
 - [ ] **Backend relay for the Claude API key**, with **App Attest** (requests must come from
       the real app) and **per-user rate limits** — the key must never ship inside the app
       (see Decision Log → relay). Remove any local development key first.
@@ -609,13 +614,18 @@ Details live in the linked sections; this list is so none are missed.
   preference. Typing something the parser can't read gets a scripted reply ("Without AI
   help I can only understand dates — you can turn it on in Settings any time"). AI help can
   be switched on or off later in Settings. Designed in from the start, not bolted on.
-- **"Top pick": offline by default, Claude on request (direction agreed; details open).**
+- **"Top pick": the phone ranks, the AI judges people sets automatically, Claude re-picks
+  for taste on request (direction agreed; details open).** *(Was "offline by default,
+  Claude on request" — updated Nov 2026: people sets are now judged automatically; see
+  "Which sets the AI judges, and how many photos".)*
   Each duplicate set shows one *top pick* — today chosen on the phone (see the "Top pick"
   status entry). In the set's sheet it's first with a ★ "Top pick" badge; the chat says "Here's my
   top pick from each — … whether you agree." It's labelled "top pick", not "best",
   because the choice may later come from Claude and the user's stated taste.
-  - **Offline pick = the free default and the gate.** It handles objective flaws (blur,
-    blinks), costs nothing, works for everyone, and is enough for most bursts. The UI
+  - **Phone's pick = the free default and the gate.** It handles objective flaws (blur,
+    blinks), costs nothing, works for everyone (including without AI consent), and is the
+    final pick for sets without people. For sets with people, the AI judges automatically
+    among the photos that pass these checks. The UI
     doesn't explain *why* a photo was picked; a short explanation can live in an in-app
     FAQ, and if a user asks in the chat "why this one?" the app must be able to answer
     (the scan already records sharpness and eyes-open data per photo).
@@ -623,14 +633,15 @@ Details live in the linked sections; this list is so none are missed.
     Claude re-picks using the stated preference and the ★ moves to its choices. This is
     the "re-pick" lever of the conversational AI (see Decision Log → "The AI is the
     conversational face"); today's chat is scripted and only understands dates.
-  - **Open questions:** (1) should Claude ever step in automatically on near-ties?
-    (suggested: no for v1 — only on request, so cost stays zero unless asked);
-    (2) when a preference is stated, which sets does it apply to — all, the open one, or
+  - **Open questions:** (1) ~~should Claude ever step in automatically on near-ties?~~
+    **Answered (Nov 2026):** yes — every set with people is judged automatically; see
+    "Which sets the AI judges, and how many photos". (2) **Still open — matters for the
+    re-pick lever:** when a preference is stated, which sets does it apply to — all, the open one, or
     ask? Telling "landscape" sets from "selfie with nature behind" sets needs judgment.
     Idea to evaluate: a free on-device first pass (Apple Vision's image classification
     labels like beach/mountain/sky, plus the face detection already run — a face filling
-    the frame = selfie) narrows the sets, then Claude ranks only those; (3) should stated
-    preferences be remembered across scans?
+    the frame = selfie) narrows the sets, then Claude ranks only those; (3) **still open:**
+    should stated preferences be remembered across scans?
   - **Cost estimate (measured Oct 2026):** a photo at 1024px is about 1,040 input tokens
     (Anthropic's formula: width ÷ 28 × height ÷ 28, rounded up; 768px ≈ 590), which
     matched OpenRouter's charges exactly. One set at the top-10 default ≈ $0.0012 on
