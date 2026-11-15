@@ -60,7 +60,24 @@ let weekdays: [String] = [
  "last Friday of October 2025", "My birthday in 2024", "summer vacation", "my kid's birthday party in may", "photos from October 2025", "show me pictures from last month", "Our trip in March 2025", "my birthday, week of november 5th for the year 2025", "duplicates from the whole year 2025", "Sorry, I meant September 26 to October 4 2025", "actually make it October 2025", "no wait, I meant last month", "oops, I meant summer 2024 instead", "how about October 2025?", "let's do the first two weeks of March 2025 instead", "sorry, my birthday in 2024", "Let’s search September 26 to October 4 2025", "let's search October 2025", "can you go through the first week of March 2025", "review October to December 2025", "our trip from Oct 1 to Oct 4 2025", "the wedding weekend of June 14 2025", "Let’s try septemebr 26 to october 4 2025", "octobr 2025", "Novmber 5th 2025", "agust 2024", "febuary 14 2025", "januray 3 to 10 2025", "match 3", "match photos from may 2025", "number 5 in 2024", "december 25 2025", "septmbre 26 2025", "octbr 4 2025", "dece 25 2025", "augst 3 2024", "marhc 3 2025", "mark 3", "maybe 2025", "junk 2024", "novel 5", "October 4 to september 26 2025", "What about octubre 4 to septumber 26 2025", "Dec 20 to Jan 5 2026", "July to February 2026", "Oct 2025 to Sep 2025", "Christmas to Halloween 2025", "second Sunday of May 2025", "this past weekend", "winter", "winter 2025",
 ]
 
-for (t, c) in cases + (combinations + refusals + weekdays).map({ ($0, nil) }) {
+// British English (Nov 2026): fortnight, UK holidays and bank holidays
+// (England and Wales dates), and half term, which should ask, not guess.
+let british: [String] = [
+ "the fortnight before Christmas 2025", "the last fortnight", "past fortnight", "a fortnight ago",
+ "first fortnight of August 2025", "a fortnight after Easter 2025",
+ "Boxing Day 2025", "boxing day", "the week after Boxing Day 2025", "Christmas Eve to Boxing Day 2025",
+ "Bonfire Night 2025", "guy fawkes night 2024", "Hogmanay 2025",
+ "Good Friday 2025", "good friday", "Easter Monday 2025", "Mothering Sunday 2025", "Mothering Sunday 2026",
+ "early May bank holiday 2025", "spring bank holiday 2025", "August bank holiday 2025", "summer bank holiday 2024",
+ "the August bank holiday weekend 2025", "summer bank holiday weekend",
+ "Our Cornwall trip over the August bank holiday weekend 2025", "may bank holiday 2025",
+ "October half term", "half term", "half term 2025",
+ // "this/last year" say which year (found on device with "Boxing Day last year")
+ "Boxing Day last year", "Christmas last year", "Easter last year", "Halloween this year", "last year's Christmas",
+ "Bonfire Night last year", "summer last year", "first week of last year", "last year", "October last year",
+]
+
+for (t, c) in cases + (combinations + refusals + weekdays + british).map({ ($0, nil) }) {
   func show(_ r: DateInterval) -> String { f.string(from: r.start, to: r.end.addingTimeInterval(-1)) }
   let res: String
   switch TypedDateParser.reading(of: t, current: c, now: now, calendar: cal) {

@@ -86,7 +86,8 @@ enum TypedDateParser {
     /// - Parameter current: The range already being discussed, if any —
     ///   needed for "a week earlier" and the like.
     static func reading(of input: String, current: DateInterval? = nil, now: Date = .now, calendar: Calendar = .current) -> Reading {
-        var scan = Scan(fixingMonthTypos(in: input.lowercased().replacingOccurrences(of: "\u{2019}", with: "'")))
+        let typed = britishToPlain(input.lowercased().replacingOccurrences(of: "\u{2019}", with: "'"))
+        var scan = Scan(fixingMonthTypos(in: yearWordsAsNumbers(typed, now: now, calendar: calendar)))
         dropAmbiguousWords(&scan)
 
         if scan.peek(#"\b(?:a few|several|some|some time|sometime|a while|a bit|a little while)\s+(?:(?:days?|weeks?|months?|years?|"# + weekdayNames + #")s?\s+)?ago\b"#) != nil {
@@ -111,6 +112,29 @@ enum TypedDateParser {
             return onlyBroad && !unknownWords(in: scan.text).isEmpty ? .unsure(options[0]) : .range(options[0])
         default: return .either(options[0], options[1])
         }
+    }
+
+    /// British wording the rules below don't otherwise know, rewritten as
+    /// its plain equivalent before anything is read: "fortnight" is "two
+    /// weeks", so "the fortnight before Christmas", "the last fortnight",
+    /// "a fortnight ago" and "first fortnight of August" all work like their
+    /// "two weeks" versions. (Holidays like Boxing Day are listed with the
+    /// other holidays.)
+    private static func britishToPlain(_ text: String) -> String {
+        text.replacingOccurrences(of: #"\b(?:an?\s+)?fortnight(?:'s)?\b"#, with: "two weeks", options: .regularExpression)
+    }
+
+    /// "this year" / "last year" are written out as the year number, so they
+    /// say which year a narrower piece is in, just like a typed year: "Boxing
+    /// Day last year" = Boxing Day 2025, "summer last year" = summer 2025.
+    /// (Read as a period of their own, they had turned "Christmas last year"
+    /// into the whole of last year.) On their own they still mean the whole
+    /// year, as before.
+    private static func yearWordsAsNumbers(_ text: String, now: Date, calendar: Calendar) -> String {
+        let thisYear = calendar.component(.year, from: now)
+        return text
+            .replacingOccurrences(of: #"\bthis\s+year(?:'s)?\b"#, with: String(thisYear), options: .regularExpression)
+            .replacingOccurrences(of: #"\b(?:last|previous)\s+year(?:'s)?\b"#, with: String(thisYear - 1), options: .regularExpression)
     }
 
     /// Everyday words that don't change the meaning of a date request —
@@ -266,6 +290,7 @@ enum TypedDateParser {
             let keep = message == word
                 || after.range(of: #"^\.?\s*,?\s*(?:of\s+)?\d"#, options: .regularExpression) != nil
                 || after.range(of: #"^\s*(?:-|–|—|(?:to|through|thru|until|and)\b)"#, options: .regularExpression) != nil
+                || after.range(of: #"^\s+bank\s+holiday"#, options: .regularExpression) != nil // "spring bank holiday"
                 || before.range(of: datey, options: .regularExpression) != nil
             if keep {
                 searchFrom = match.location + (word as NSString).length
@@ -502,14 +527,18 @@ enum TypedDateParser {
     /// one out as it's found so it can't be read twice (the "4" and "2025"
     /// in "Oct 1-4, 2025" aren't also read as a day and a year on their own).
     private static func takeMentions(_ scan: inout Scan, now: Date, calendar: Calendar) -> [Mention] {
-        var mentions = relativePeriods(&scan, now: now, calendar: calendar)
+        var mentions: [Mention] = []
         let year = #"(?:\s*,?\s*((?:19|20)\d{2}))?"#
         let suffix = #"(?:st|nd|rd|th)?"#
         let through = #"\s*(?:-|–|—|to|through|thru|until)\s*"#
 
+        // Holidays first: some end in a weekday ("Mothering Sunday", "Good
+        // Friday") that would otherwise be read as the most recent Sunday or
+        // Friday.
         while let match = scan.take(#"\b("# + holidayNames + #")\b"# + year) {
             mentions.append(Mention(kind: .holiday(match[1]), year: Int(match[2]), location: match.location))
         }
+        mentions += relativePeriods(&scan, now: now, calendar: calendar)
         // Runs of days: "Oct 1-4, 2025", "1-4 October 2025"
         while let match = scan.take(#"\b"# + monthPattern + #"\.?\s+(\d{1,2})"# + suffix + through + #"(\d{1,2})"# + suffix + #"\b"# + year),
               let month = monthNumber(match[1]), let from = Int(match[2]), let to = Int(match[3]) {
@@ -710,6 +739,11 @@ enum TypedDateParser {
                   let next = calendar.date(byAdding: .month, value: 3, to: start),
                   let end = calendar.date(byAdding: .day, value: -1, to: next) else { return nil }
             return .wholeDays(from: start, through: end, calendar: calendar)
+        case let .holiday(name) where name.hasSuffix(" weekend"):
+            // "August bank holiday weekend" = Saturday to the bank holiday Monday.
+            guard let monday = holidayDate(String(name.dropLast(" weekend".count)), year: year, calendar: calendar),
+                  let saturday = calendar.date(byAdding: .day, value: -2, to: monday) else { return nil }
+            return .wholeDays(from: saturday, through: monday, calendar: calendar)
         case let .holiday(name):
             return oneDay(holidayDate(name, year: year, calendar: calendar))
         case let .day(month, day):
@@ -754,8 +788,15 @@ enum TypedDateParser {
 
     // MARK: - Holidays
 
+    /// Longest names first, so "Easter Monday" isn't read as "Easter".
+    /// British ones: Boxing Day, Bonfire/Guy Fawkes Night, Hogmanay, Good
+    /// Friday, Easter Monday, Mothering Sunday, and the bank holidays —
+    /// England and Wales dates (Scotland's summer one differs). A bare "May
+    /// bank holiday" isn't listed: it could be early May or the spring one,
+    /// so it's left for the chat to ask about.
     private static let holidayNames =
-        #"christmas eve|christmas|xmas|new year'?s eve|new year'?s day|new year'?s|new year|halloween|valentine'?s day|valentine'?s|easter|thanksgiving"#
+        #"(?:early may|spring|summer|august) bank holiday(?: weekend)?|boxing day|bonfire night|guy fawkes(?:'? night)?|hogmanay|good friday|easter monday|mothering sunday|"#
+        + #"christmas eve|christmas|xmas|new year'?s eve|new year'?s day|new year'?s|new year|halloween|valentine'?s day|valentine'?s|easter|thanksgiving"#
 
     private static func holidayDate(_ name: String, year: Int, calendar: Calendar) -> Date? {
         let (month, day): (Int, Int)
@@ -768,9 +809,33 @@ enum TypedDateParser {
         case _ where name.hasPrefix("valentine"): (month, day) = (2, 14)
         case "easter": (month, day) = easterSunday(year)
         case "thanksgiving": (month, day) = (11, usThanksgivingDay(year, calendar: calendar))
+        case "boxing day": (month, day) = (12, 26)
+        case "bonfire night": (month, day) = (11, 5)
+        case _ where name.hasPrefix("guy fawkes"): (month, day) = (11, 5)
+        case "hogmanay": (month, day) = (12, 31)
+        case "early may bank holiday": return monday(.first, of: 5, year: year, calendar: calendar)
+        case "spring bank holiday": return monday(.last, of: 5, year: year, calendar: calendar)
+        case "summer bank holiday", "august bank holiday": return monday(.last, of: 8, year: year, calendar: calendar)
+        case "good friday", "easter monday", "mothering sunday":
+            // Counted from Easter Sunday: Mothering Sunday is three weeks before.
+            let (month, day) = easterSunday(year)
+            let offset = ["good friday": -2, "easter monday": 1, "mothering sunday": -21][name] ?? 0
+            return calendar.date(from: DateComponents(year: year, month: month, day: day))
+                .flatMap { calendar.date(byAdding: .day, value: offset, to: $0) }
         default: return nil
         }
         return calendar.date(from: DateComponents(year: year, month: month, day: day))
+    }
+
+    private enum Which { case first, last }
+
+    /// The first or last Monday of a month — when UK bank holidays fall.
+    private static func monday(_ which: Which, of month: Int, year: Int, calendar: Calendar) -> Date? {
+        guard let first = calendar.date(from: DateComponents(year: year, month: month, day: 1)),
+              let days = calendar.range(of: .day, in: .month, for: first) else { return nil }
+        let mondays = days.compactMap { calendar.date(from: DateComponents(year: year, month: month, day: $0)) }
+            .filter { calendar.component(.weekday, from: $0) == 2 }
+        return which == .first ? mondays.first : mondays.last
     }
 
     /// Easter Sunday (Western), by the standard "anonymous Gregorian" formula.

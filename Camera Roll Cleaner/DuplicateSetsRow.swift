@@ -121,8 +121,9 @@ struct DuplicateSetsRow: View {
     }
 
     #if DEBUG
-    /// While the AI judges the sets with people, "Picking the best shots…"
-    /// (worded as picking, not double-checking — the brief explains why).
+    /// While the AI judges the sets with people, "Still choosing the best
+    /// shots…" (worded as choosing, not double-checking — the brief explains
+    /// why), plus a testing-only count.
     /// Sets with people join the row as each one is judged.
     /// After that, a testing-only line: how many it judged, the model and
     /// the cost.
@@ -133,12 +134,18 @@ struct DuplicateSetsRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         } else if review.aiFinished < review.aiTotal {
+            // What a user would see: no counts — "0 of 11" next to "28
+            // duplicate sets" raises the question of why only some are
+            // being looked at.
             HStack(spacing: 6) {
                 ProgressView()
-                Text("Picking the best shots… (\(review.aiFinished) of \(review.aiTotal))")
+                Text("Still choosing the best shots…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Text("Testing: \(review.aiFinished) of \(review.aiTotal) sets with people judged")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
         } else if review.aiTotal > 0 {
             Text("Testing: \(AIJudgeSettings.model) judged \(review.aiTotal) set\(review.aiTotal == 1 ? "" : "s") with people · $\(String(format: "%.4f", review.aiSpent))")
                 .font(.caption)

@@ -1,7 +1,7 @@
 # Chat test messages
 
 A fixed list of things a user might type in the chat. Every model gets the **same messages**,
-and the replies are compared side by side. It's the same idea as the date reader's 197 test
+and the replies are compared side by side. It's the same idea as the date reader's 236 test
 phrases (`DateParserChecks/`), but for the AI's replies. See the brief's "Conversational AI"
 entry.
 
@@ -34,8 +34,10 @@ user deletes the rest) and asks which dates or trip to look at.
 
 ## 2. Dates in free-form or British wording
 
-The date reader can't read most of these today. With no date lever yet, the AI can't set
-the dates itself.
+The date reader now reads 4–8 itself (British wording added Nov 2026), and asks
+about 9 (half term varies by school). Those wouldn't reach the AI in the app, but they're kept
+here to see how each model copes with similar wording. With no date lever yet, the AI can't
+set dates itself.
 
 4. Sort out the photos from the fortnight before Christmas
 5. The last fortnight, please

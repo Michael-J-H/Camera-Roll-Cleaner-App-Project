@@ -160,7 +160,7 @@ record, not unmerged work.
       "first weekend of"), so free combinations work: holidays, "two weeks before …",
       "week of …", "first two weeks of …", seasons, weekdays, "a week earlier", and more; asks
       when a request has two readings and refuses rather than guesses. Checked
-      against 197 phrases with known answers (`DateParserChecks/check.sh`). Apple's
+      against 236 phrases with known answers (`DateParserChecks/check.sh`). Apple's
       on-device model was tried for this and removed (see Decision Log). The chat's message
       box now grows to 5 lines so longer requests are readable. **Date step is done.**
 - [x] In-chat preview row + pop-out grid, tested on device — after a scan the chat shows
@@ -349,7 +349,7 @@ record, not unmerged work.
         chat messages, through OpenRouter (debug-only, on the developer's phone), so
         different models can be tried for how well they talk and follow the rules. Uses
         the OpenRouter key already saved in the Keychain.
-      - **Comparing models: a fixed list of messages,** like the 197 date phrases — every
+      - **Comparing models: a fixed list of messages,** like the date reader's 236 test phrases — every
         model gets the same messages and the replies are judged side by side (otherwise
         each model gets a different conversation and the comparison isn't fair). **Claude
         Code drafts the list** (realistic requests, preferences, off-topic chat, attempts
@@ -359,11 +359,9 @@ record, not unmerged work.
         good reply looks like at this no-levers stage) — awaiting the developer's review.
       - **British English must be understood as well as American** (developer, Nov 2026):
         "fortnight", "bank holiday", "half term", "Boxing Day", "sort out", "rubbish",
-        day-first dates like 26/9. The test list includes these. **Gap in the hand-written
-        date reader** (it matters without AI too): it knows "autumn" and reads numeric
-        dates by the phone's region, but not "fortnight", Boxing Day, bank holidays,
-        Bonfire Night or Mothering Sunday. Half term varies by school, so it should ask
-        rather than guess. Not yet fixed.
+        day-first dates like 26/9. The test list includes these. **The hand-written date
+        reader now knows British wording too** (Nov 2026; matters without AI as well): see
+        Decision Log → "Typed dates…" → British wording.
       - **Over-promise check:** before any levers exist the AI can't actually do anything,
         so test whether it admits that or pretends — an early check of its instructions.
       - **Automatic judging of people sets — built and tested on device** (Nov 2026, Sep 26 –
@@ -496,9 +494,22 @@ Details live in the linked sections; this list is so none are missed.
   no pattern covered a lone holiday. Numbers-only dates ("10/1/2025") go to iOS's date
   detector, which uses the phone's region for day/month order. "A week earlier"-style
   changes move the range already being discussed. Same answer every time, works on every
-  iPhone, and checked on the Mac against a fixed list of phrases with known answers (197
-  phrases: everyday ones, combinations, weekdays, and refusal/ambiguity cases) — re-run it after any
+  iPhone, and checked on the Mac against a fixed list of phrases with known answers (236
+  phrases: everyday ones, combinations, weekdays, refusal/ambiguity cases, and British
+  wording) — re-run it after any
   change with `DateParserChecks/check.sh` (prints "All phrases match" if nothing changed).
+  **British wording (added Nov 2026 — British English must be understood as well as
+  American):** "fortnight" is read as "two weeks" ("the fortnight before Christmas", "the
+  last fortnight", "a fortnight ago"); holidays Boxing Day, Bonfire Night / Guy Fawkes
+  Night, Hogmanay, Good Friday, Easter Monday, Mothering Sunday (three weeks before
+  Easter), and the bank holidays — early May (first Monday of May), spring (last Monday of
+  May), summer/August (last Monday of August; England and Wales dates — Scotland's is the
+  first Monday) — each optionally with "weekend" (Saturday to the Monday). A bare "May bank
+  holiday" could be either May one, and **half term** varies by school, so both ask instead
+  of guessing ("October half term" offers October or exact dates). "Autumn" and day-first
+  numeric dates (by the phone's region) already worked. **Fixed alongside (found on device
+  with "Boxing Day last year"):** "this year" / "last year" now say which year, like a typed
+  year — "Christmas last year" had read as the whole of last year, for every holiday.
   **Misspelled months are tolerated where a date is obvious:** if a day number or year
   follows a word, it's read as a month when it's within one typo of a month name (two for
   longer words; swapped letters count as one) — "septemebr 26", "octobr 2025" — or starts
@@ -613,7 +624,7 @@ Details live in the linked sections; this list is so none are missed.
   understands ("the fortnight before my Christmas break last year" → "two weeks before
   Christmas 2025"); the parser works out the dates; the confirmation step shows them; if the
   parser refuses, the AI asks the user. Date arithmetic is a known weak spot for AI models
-  (Apple's on-device model got "two weeks before Christmas" wrong) — this keeps the 197
+  (Apple's on-device model got "two weeks before Christmas" wrong) — this keeps the 236
   tested phrases in charge of the actual dates.
 - **Without AI, the app still works (decided Nov 2026).** Apple expects an app to stay
   usable when a user declines (Guideline 5.1.2(i) consent). Declining AI, no internet, or a
