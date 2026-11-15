@@ -72,7 +72,9 @@ The actual planned UX:
    "Top pick" status entry). No API calls, no cost, works offline.
 2. **Cloud AI judgment (paid) — sets with people only:** the phone filters and ranks; the AI
    makes the final call among the phone's **top 10**, so it never weighs blurry or blinking
-   shots. Landscapes, food and other sets keep the phone's pick. It confirms the phone's ★
+   shots. Landscapes, food and other sets keep the phone's pick. **Judged automatically,
+   right after the scan, for every set with people** (decided Nov 2026) — see Decision Log
+   → "Which sets the AI judges, and how many photos". It confirms the phone's ★
    unless it's clearly bad (backstop) or picks by a stated preference ("both of us
    laughing"). Model: Claude Haiku 5.5 or Sonnet 5.5 — choice deferred to testing with
    friends. Through OpenRouter while testing on the developer's phone; Anthropic directly,
@@ -347,8 +349,17 @@ record, not unmerged work.
         chat messages, through OpenRouter (debug-only, on the developer's phone), so
         different models can be tried for how well they talk and follow the rules. Uses
         the OpenRouter key already saved in the Keychain.
-      - **Then levers, one at a time,** starting with dates (the hand-written date reader
-        is there to check against), then re-pick with a preference, then explain a pick.
+      - **Comparing models: a fixed list of messages,** like the 197 date phrases — every
+        model gets the same messages and the replies are judged side by side (otherwise
+        each model gets a different conversation and the comparison isn't fair). Ask 3–5
+        friends what they'd type to build the list.
+      - **Over-promise check:** before any levers exist the AI can't actually do anything,
+        so test whether it admits that or pretends — an early check of its instructions.
+      - **Automatic judging of people sets** (Decision Log → "Which sets the AI judges")
+        — reuses the Ask AI tool's request code, proven on the lake set.
+      - **Then levers, one at a time,** starting with dates (handing phrases to the parser —
+        Decision Log → "The date lever"), then re-pick with a preference, then explain a
+        pick.
       - **Switching to Anthropic directly** comes with the relay, before TestFlight. Keep
         the network call in one small piece of code so that switch is contained. Write
         API code from current docs, not memory.
@@ -377,7 +388,8 @@ Details live in the linked sections; this list is so none are missed.
       5.1.2(i): apps must "clearly disclose where personal data will be shared with third
       parties, including with third-party AI, and obtain explicit permission before doing
       so." So a clear yes from the user (not just a notice) before the first photos **or
-      chat text** are sent to Claude; without it, the on-device features still work. Plus
+      chat text** are sent to Claude; without it, the app falls back to its no-AI version
+      (Decision Log → "Without AI, the app still works"). Plus
       the App Store privacy labels. On-device features send nothing.
 - [ ] **Apple's privacy manifest:** check whether the app uses any APIs that Apple requires a
       privacy-manifest reason for, and add one if so (not checked yet).
@@ -531,6 +543,41 @@ Details live in the linked sections; this list is so none are missed.
   - *Considered:* AI fully behind the scenes with a scripted chat (cheapest, but rigid when
     people type something unexpected), and the AI answering only with actions (predictable,
     but doesn't feel like talking to an AI — the thing users want).
+- **Which sets the AI judges, and how many photos (decided Nov 2026).**
+  - **Every set with people, automatically, right after the scan** (with AI consent given).
+    The chat presents the picks with confidence — no "want me to double-check?" offer: a
+    user expects the app to get it right from the start, and offering a double-check would
+    make them doubt the first answer.
+  - **Fewer photos when most are bad:** only photos that pass the phone's checks are sent
+    (today: no closed eyes; a blur cutoff could be added once one is checked against real
+    sets), at most 10. If only one passes, the phone's pick stands and no AI is called; if
+    none pass ("every photo is bad"), there's nothing worth judging — the phone's pick
+    stands, no AI call.
+  - **Whole photos, not crops around the people** — in many people photos the background
+    matters as much (the mountain behind the couple). Considered for cost (≈⅓ the tokens)
+    and face detail, rejected for that reason.
+  - **In reserve:** judge just ahead of the user (first few sets at once, the rest as they
+    move through the review), so sets never opened are never paid for — if costs matter at
+    scale. Catch: a later set's ★ could shift when the user reaches it.
+  - **On hold:** skipping sets where the phone seems confident — its confidence isn't proven
+    (it was confidently wrong on the lake set before the blink fix).
+  - **Cost:** about $0.0012 per set on Haiku 5.5, $0.023 on Sonnet 5.5 — a trip with 20
+    people sets ≈ 2.4¢ / 46¢.
+- **The date lever hands phrases to the hand-written parser; the AI never calculates dates
+  (decided Nov 2026).** The AI turns free-form wording into a phrase the parser already
+  understands ("the fortnight before my Christmas break last year" → "two weeks before
+  Christmas 2025"); the parser works out the dates; the confirmation step shows them; if the
+  parser refuses, the AI asks the user. Date arithmetic is a known weak spot for AI models
+  (Apple's on-device model got "two weeks before Christmas" wrong) — this keeps the 197
+  tested phrases in charge of the actual dates.
+- **Without AI, the app still works (decided Nov 2026).** Apple expects an app to stay
+  usable when a user declines (Guideline 5.1.2(i) consent). Declining AI, no internet, or a
+  used-up daily AI budget all fall back to today's app: typed dates through the hand-written
+  parser plus the calendar, the scan, the duplicate sets, the phone's ★ pick, and the full
+  review/delete flow. Lost: free-form chat beyond dates, the AI's judging, re-picks by
+  preference. Typing something the parser can't read gets a scripted reply ("Without AI
+  help I can only understand dates — you can turn it on in Settings any time"). AI help can
+  be switched on or off later in Settings. Designed in from the start, not bolted on.
 - **"Top pick": offline by default, Claude on request (direction agreed; details open).**
   Each duplicate set shows one *top pick* — today chosen on the phone (see the "Top pick"
   status entry). In the set's sheet it's first with a ★ "Top pick" badge; the chat says "Here's my
