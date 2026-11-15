@@ -80,11 +80,16 @@ The actual planned UX:
    so ranking ~100 small thumbnails is well under a cent. **Write the API code from the
    current Anthropic docs, not from memory** — the model is new, and settings that worked
    on Haiku 4.5 now return errors (e.g. sampling settings and assistant "prefill").
-4. **Cost guardrails (decided, in response to developer's concern about runaway token usage):**
-   cloud AI is only invoked at actual decision points (comparing a specific cluster), never
-   for general back-and-forth chat; send small/thumbnail-sized images, not full-resolution
-   originals; don't re-send or re-judge a cluster already evaluated earlier in the conversation;
-   consider a visible usage indicator so cost is never a surprise.
+4. **Cost guardrails (revised Nov 2026 — see Decision Log → "The AI is the conversational
+   face"):** the AI now also answers typed chat messages, so the guardrails are: fixed
+   messages (greeting, "Scanning…", results) are written by us and cost nothing — the AI
+   only runs when the user types or a set is judged; replies stay short and only recent
+   messages are sent (costs don't grow over a long chat); gently on topic; a daily AI budget
+   per user with a soft landing (the scripted buttons keep working); a tighter cap on
+   re-picks, since those re-send photos. Still: send small images, not originals; don't
+   re-send or re-judge a set already judged; consider a visible usage indicator. Text is
+   cheap (~$0.0003–0.001 per message on Haiku, ~20× on Sonnet); photos are the main cost.
+   *(Previously: AI only at decision points, never for general chat.)*
 3. Open-source/offline-only models were considered as an alternative to cloud AI for the judgment
    step (better privacy, no per-use cost) but were deprioritized in favor of prototyping with
    cloud AI first to establish a quality baseline, revisiting later if cost or privacy warrants it.
@@ -100,8 +105,9 @@ The actual planned UX:
 - **Apple Developer Program ($99/yr)** — NOT needed yet. Only required later for TestFlight
   beta distribution or App Store submission. Free Apple ID is sufficient for building and
   testing on the developer's own device during development (7-day app expiry, reinstall as needed).
-- **Anthropic API account** — needed for the real AI step (next); not yet set up. Set a
-  monthly spending limit in the Anthropic Console.
+- **Anthropic API account** — needed when the app switches from OpenRouter to Anthropic
+  directly (with the relay, before TestFlight); not yet set up. Set a monthly spending
+  limit in the Anthropic Console.
 
 ## Status so far
 Everything checked off below is committed **and merged into `main`** on GitHub. Each
@@ -327,12 +333,18 @@ record, not unmerged work.
         include this OpenRouter tool (see checklist) — so the comparison there has to run
         through the real AI step. Both models are Anthropic's, so the relay can offer both
         (a hidden setting, or half the testers on each) without breaking "one AI company".
-      - **Next: build the app's real AI step, calling Anthropic directly for now** (decided
-        Nov 2026 — the relay waits until it's needed, before TestFlight). The Anthropic key
-        is pasted in once and kept in the phone's Keychain, through a debug-only screen, like
-        the OpenRouter test key. The network call lives in one small piece of code so
-        switching it to the relay later is a contained change. Built from current Anthropic
-        docs — not from memory. Needs an Anthropic API account (not set up yet).
+      - **The relay waits until it's needed** (decided Nov 2026) — built before TestFlight,
+        not before; only the developer's phone uses the app until then.
+- [ ] **Conversational AI — NEXT** (see Decision Log → "The AI is the conversational face"):
+      - **First milestone:** the scripted flow stays exactly as it is; the AI answers typed
+        chat messages, through OpenRouter (debug-only, on the developer's phone), so
+        different models can be tried for how well they talk and follow the rules. Uses
+        the OpenRouter key already saved in the Keychain.
+      - **Then levers, one at a time,** starting with dates (the hand-written date reader
+        is there to check against), then re-pick with a preference, then explain a pick.
+      - **Switching to Anthropic directly** comes with the relay, before TestFlight. Keep
+        the network call in one small piece of code so that switch is contained. Write
+        API code from current docs, not memory.
 
 ## Before TestFlight / App Store (checklist)
 Items scattered through this brief that must be settled before anyone else uses the app.
@@ -483,6 +495,32 @@ Details live in the linked sections; this list is so none are missed.
   could be committed by mistake, and would copy the key into the app itself (readable
   from the installed app), for no gain. The shipping app needs no key at all — the
   relay server holds it.
+- **The AI is the conversational face (decided Nov 2026).** The original appeal — "chat with
+  an AI that clears out duplicates and keeps the best" — is what users want, even though the
+  work underneath is on rails. So the AI talks, and the app keeps the rails:
+  - **Fixed moments are written by us** (greeting, "Scanning…", results, "No duplicates in
+    that range") — same every time, free. The AI runs only when the user types or a set is
+    judged; someone who only taps costs just the photo judgments.
+  - **The AI acts through levers the app offers** (Anthropic calls this "tool use"): set a
+    date range, start a scan, open a set, re-pick with a preference, explain a pick. It can
+    only pull the levers it's given. **It never gets a delete lever** — iOS's own
+    confirmation stays the only way to delete.
+  - **It speaks after the lever's result comes back** — the app does the action and tells
+    the AI what actually happened, and only then does the AI write its reply — so it
+    describes what happened rather than predicting it.
+  - **Facts come from the app's screen, not the AI's words** — counts, sizes, which photo,
+    anything about deleting stay in the photo row, badges and review screen. The AI talks
+    around them ("Here's what I found — what do you think?").
+  - **Only talks about what it's doing or looking for;** brief off-topic banter, then
+    steers back. Guardrails are under AI architecture → Cost guardrails.
+  - **Downsides accepted:** every user who types costs something (shapes pricing before the
+    App Store — free tier vs. subscription, not decided); less predictable than a script,
+    so testing means reading conversations; model choice matters more for conversation than
+    it did for photo picks (Apple's tools already narrow the photo judgment; nothing on the
+    phone helps with the talking).
+  - *Considered:* AI fully behind the scenes with a scripted chat (cheapest, but rigid when
+    people type something unexpected), and the AI answering only with actions (predictable,
+    but doesn't feel like talking to an AI — the thing users want).
 - **"Top pick": offline by default, Claude on request (direction agreed; details open).**
   Each duplicate set shows one *top pick* — today chosen on the phone (see the "Top pick"
   status entry). In the set's sheet it's first with a ★ "Top pick" badge; the chat says "Here's my
@@ -494,9 +532,9 @@ Details live in the linked sections; this list is so none are missed.
     FAQ, and if a user asks in the chat "why this one?" the app must be able to answer
     (the scan already records sharpness and eyes-open data per photo).
   - **Claude = taste, only when asked** — e.g. "I want photos with better landscapes".
-    Claude re-picks using the stated preference and the ★ moves to its choices. This
-    conversation needs the cloud AI milestone (and its relay server); today's chat is
-    scripted and only understands dates.
+    Claude re-picks using the stated preference and the ★ moves to its choices. This is
+    the "re-pick" lever of the conversational AI (see Decision Log → "The AI is the
+    conversational face"); today's chat is scripted and only understands dates.
   - **Open questions:** (1) should Claude ever step in automatically on near-ties?
     (suggested: no for v1 — only on request, so cost stays zero unless asked);
     (2) when a preference is stated, which sets does it apply to — all, the open one, or
