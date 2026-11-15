@@ -243,7 +243,7 @@ record, not unmerged work.
       **Recovering deleted photos is left to iOS (decided).** Apps can't see or restore items
       in Recently Deleted, and the developer chose not to add an in-app hint pointing there —
       users can find Photos → Albums → Recently Deleted themselves.
-- [ ] Cloud AI integration for judgment calls — NEXT. Decided so far:
+- [ ] Cloud AI integration for judgment calls — test tool done; the in-app version is the "re-pick" lever of the conversational AI below. Decided so far:
       - **Scope:** the AI only handles **sets with people** (the phone already knows which
         sets have faces). Landscapes, food and other sets keep the phone's top pick.
       - **Teamwork:** the phone ranks every photo and filters; the AI makes the final call
