@@ -355,6 +355,15 @@ record, not unmerged work.
         Code drafts the list** (realistic requests, preferences, off-topic chat, attempts
         to make the AI do things it can't); the developer reviews it and adds their own.
         Asking friends was skipped (Nov 2026) — their effort is saved for testing the app.
+        **Drafted:** `ChatChecks/messages.md` (38 messages in 7 groups, each with what a
+        good reply looks like at this no-levers stage) — awaiting the developer's review.
+      - **British English must be understood as well as American** (developer, Nov 2026):
+        "fortnight", "bank holiday", "half term", "Boxing Day", "sort out", "rubbish",
+        day-first dates like 26/9. The test list includes these. **Gap in the hand-written
+        date reader** (it matters without AI too): it knows "autumn" and reads numeric
+        dates by the phone's region, but not "fortnight", Boxing Day, bank holidays,
+        Bonfire Night or Mothering Sunday. Half term varies by school, so it should ask
+        rather than guess. Not yet fixed.
       - **Over-promise check:** before any levers exist the AI can't actually do anything,
         so test whether it admits that or pretends — an early check of its instructions.
       - **Automatic judging of people sets — built and tested on device** (Nov 2026, Sep 26 –
