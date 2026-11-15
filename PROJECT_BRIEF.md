@@ -355,8 +355,33 @@ record, not unmerged work.
         friends what they'd type to build the list.
       - **Over-promise check:** before any levers exist the AI can't actually do anything,
         so test whether it admits that or pretends — an early check of its instructions.
-      - **Automatic judging of people sets** (Decision Log → "Which sets the AI judges")
-        — reuses the Ask AI tool's request code, proven on the lake set.
+      - **Automatic judging of people sets — built and tested on device** (Nov 2026, Sep 26 –
+        Oct 4, 2025: 28 sets, 11 with people). Haiku 5.5: $0.0058 for all 11. Sonnet 5.5:
+        $0.0995 (~17×) — **same picks as Haiku in all 11 sets**, and **both kept the phone's
+        ★ in every people set**, with sensible reasons. All sets in after ~30 seconds (5 at a
+        time). The off switch, progressive showing, and the Developer-menu sheets all work.
+        **Developer's read:** on this trip the AI acted as a failsafe, not a fixer — kept in
+        the first pass for now, but its necessity there is an open question (one trip of
+        mostly couple selfies after the blink fix may be an easy case; try trips with
+        groups, kids, candid shots). Its clearer value may be taste and preferences in the
+        chat. Decision Log → "Which sets the AI judges"). Right after a scan,
+        `ReviewSession` sends each set with people to the AI, 5 sets at a time: photos with
+        nobody's eyes closed, at most the phone's top 10, at 1024px (shrunk to fit the
+        request budget), with the backstop question. The AI's pick becomes the ★ (and the
+        chat row's cover) — unless the user has already started on that set (a choice, a
+        delete or "done"), so the ★ never moves under them. If the AI's pick is deleted,
+        the ★ falls back to the phone's ranking. **Sets with people are shown only once
+        judged** (developer's call, Nov 2026 — a user shouldn't see unjudged duplicates):
+        other sets appear at once, and each people set joins the end of the row as its
+        judgment comes back (added only at the end, so nothing on screen shifts). A failed
+        judgment shows the set with the phone's pick. Fewer than 2 passing photos, a failed
+        request or an unreadable answer → the phone's pick stands. All OpenRouter code now
+        lives in `OpenRouterClient.swift` (the one file to swap for the relay). Testing
+        aids (debug only): "Picking the best shots… (2 of 5)" then model and cost under the
+        chat row; the AI's verdict and reason at the top of each set in the review; "AI
+        settings" in the chat's Developer menu (🔧, top right; its screens open as sheets
+        with Done — pushing them froze the chat on device, as before) to switch judging off (stand-in for declining AI
+        consent) and pick the model (default Claude Haiku 5.5).
       - **Then levers, one at a time,** starting with dates (handing phrases to the parser —
         Decision Log → "The date lever"), then re-pick with a preference, then explain a
         pick.
@@ -371,8 +396,10 @@ Details live in the linked sections; this list is so none are missed.
 **Must do:**
 - [ ] **Paid Apple Developer Program** ($99/yr) — required for TestFlight and the App Store
       (see Toolchain). Until then the free account's 7-day app expiry applies.
-- [ ] **Remove the OpenRouter test code** (`AskAIDebugView.swift` and the "Ask AI" button in
-      `ReviewView.swift`; it's debug-only, but delete it anyway) and remove the saved key
+- [ ] **Remove the OpenRouter test code** (`AskAIDebugView.swift`, the "Ask AI" button in
+      `ReviewView.swift`, the "AI" link in `ChatShellView.swift`; it's debug-only, but delete
+      it anyway) and **point `OpenRouterClient.swift`'s job at the relay** — automatic
+      judging in `ReviewSession` calls it and remove the saved key
       from the phone ("Remove saved key" in that screen) or revoke it on openrouter.ai;
       the shipping app talks to one AI company directly.
 - [ ] **Backend relay for the Claude API key**, with **App Attest** (requests must come from
@@ -381,8 +408,8 @@ Details live in the linked sections; this list is so none are missed.
 - [ ] **Photo file sizes:** the review's "about X MB" reads a value Photos keeps per file that
       Apple doesn't officially document. Decide: switch to the fallback (estimate from pixel
       dimensions) or accept the small App Store review risk (see `ReviewView.swift`).
-- [ ] **Hide the developer screens** — "Camera Roll" and "Debug: Clustering" in the chat's
-      toolbar, and the TEMPORARY diagnostic types in `PhotoClusterEngine.swift` — so users only
+- [ ] **Hide the developer screens** — the chat's Developer menu (🔧: Camera Roll, Debug:
+      Clustering, AI settings), and the TEMPORARY diagnostic types in `PhotoClusterEngine.swift` — so users only
       see the chat.
 - [ ] **Explicit permission before anything goes to the AI** — Apple's App Review Guideline
       5.1.2(i): apps must "clearly disclose where personal data will be shared with third

@@ -14,10 +14,10 @@
 //  back on device. A sheet never navigates the chat away, so there's
 //  nothing to come back to.
 //
-//  The photo shown for each set is its current top pick — today the
-//  sharpest, eyes-open shot, picked on the phone during the scan
-//  (`PhotoCluster.representative`); later possibly re-picked by Claude to
-//  match the user's taste (see the brief's Decision Log). In the set's
+//  The photo shown for each set is its current top pick — the phone's
+//  ranked best, or for sets with people the AI's choice once it has judged
+//  them right after the scan (ReviewSession.topPick; see the brief's
+//  Decision Log). In the set's
 //  review it comes first with a ★ and starts as Keep. Photos with no
 //  duplicates aren't shown at all.
 //
@@ -71,6 +71,10 @@ struct DuplicateSetsRow: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            #if DEBUG
+            aiStatus
+            #endif
+
             Button {
                 openAt = ReviewStart(index: 0)
             } label: {
@@ -78,6 +82,7 @@ struct DuplicateSetsRow: View {
             }
             .buttonStyle(.borderedProminent)
             .padding(.top, 4)
+            .disabled(review.visibleSets.isEmpty) // e.g. every set still being judged
         }
         .sheet(item: $openAt) { start in
             ReviewView(session: review, index: start.index) { openAt = nil }
@@ -114,6 +119,33 @@ struct DuplicateSetsRow: View {
                     .padding(5)
             }
     }
+
+    #if DEBUG
+    /// While the AI judges the sets with people, "Picking the best shots…"
+    /// (worded as picking, not double-checking — the brief explains why).
+    /// Sets with people join the row as each one is judged.
+    /// After that, a testing-only line: how many it judged, the model and
+    /// the cost.
+    @ViewBuilder
+    private var aiStatus: some View {
+        if let reason = review.aiSkippedReason {
+            Text(reason)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else if review.aiFinished < review.aiTotal {
+            HStack(spacing: 6) {
+                ProgressView()
+                Text("Picking the best shots… (\(review.aiFinished) of \(review.aiTotal))")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } else if review.aiTotal > 0 {
+            Text("Testing: \(AIJudgeSettings.model) judged \(review.aiTotal) set\(review.aiTotal == 1 ? "" : "s") with people · $\(String(format: "%.4f", review.aiSpent))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+    #endif
 
     private var summary: String {
         let sets = review.visibleSets

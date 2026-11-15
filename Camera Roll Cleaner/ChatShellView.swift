@@ -588,11 +588,17 @@ private struct RangeCalendarSheet: View {
 struct ChatShellView: View {
     @StateObject private var viewModel = ChatViewModel()
     @FocusState private var isTyping: Bool
+    @State private var developerScreen: DeveloperScreen?
+
+    private enum DeveloperScreen: Identifiable {
+        case cameraRoll, clustering, aiSettings
+        var id: Self { self }
+    }
 
     var body: some View {
-        // Chat is the app's landing screen, so this is the one place that
-        // owns the NavigationStack — Camera Roll and the debug screen are
-        // both reached by pushing onto it, not the other way around.
+        // Chat is the app's landing screen and owns a NavigationStack for its
+        // title and top bar. The developer screens open as sheets over it
+        // (see the Developer menu below), not pushed onto it.
         NavigationStack {
             VStack(spacing: 0) {
                 ScrollViewReader { scrollProxy in
@@ -657,14 +663,44 @@ struct ChatShellView: View {
                 }
             }
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    NavigationLink("Camera Roll") {
-                        PhotoGridView()
+                // Developer screens, all in one menu. Separate buttons didn't
+                // fit: iOS merged "Debug: Clustering" and "AI" into one
+                // bubble (tapping it opened clustering) and cut the title
+                // down to "C". To be hidden before TestFlight (see the
+                // brief's checklist).
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Menu("Developer", systemImage: "wrench.and.screwdriver") {
+                        Button("Camera Roll", systemImage: "photo.on.rectangle") { developerScreen = .cameraRoll }
+                        Button("Debug: Clustering", systemImage: "square.stack.3d.up") { developerScreen = .clustering }
+                        #if DEBUG
+                        // Testing only — automatic AI judging on/off and its model.
+                        Button("AI settings", systemImage: "sparkles") { developerScreen = .aiSettings }
+                        #endif
                     }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    NavigationLink("Debug: Clustering") {
-                        ClusteringDebugView()
+            }
+            // Sheets, not pushed screens: pushing a screen from the chat has
+            // left it frozen on the phone after coming back (first with a
+            // link in the message list, then with this menu). A sheet
+            // slides up over the chat and never navigates it away.
+            .sheet(item: $developerScreen) { screen in
+                NavigationStack {
+                    Group {
+                        switch screen {
+                        case .cameraRoll: PhotoGridView()
+                        case .clustering: ClusteringDebugView()
+                        case .aiSettings:
+                            #if DEBUG
+                            AISettingsView()
+                            #else
+                            EmptyView()
+                            #endif
+                        }
+                    }
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { developerScreen = nil }
+                        }
                     }
                 }
             }

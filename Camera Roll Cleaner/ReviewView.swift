@@ -37,14 +37,31 @@ final class ReviewSession: ObservableObject {
 
     private var sizeCache: [String: Int64] = [:]
 
+    /// The AI's pick per set (set id → photo id), for sets it judged. See
+    /// topPick(in:).
+    @Published private var aiPicks: [UUID: String] = [:]
+
     init(sets: [PhotoCluster]) {
         self.sets = sets
+        #if DEBUG
+        startJudging()
+        #else
+        readyOrder = sets.map(\.id) // no AI in Release builds yet — everything is ready
+        #endif
     }
 
-    /// Sets that still have photos. A set whose photos were all deleted
-    /// drops out of the review and the chat's row.
+    /// Sets ready to show, in the order they became ready. Sets with people
+    /// wait for the AI's judgment, so the user never sees an unjudged set;
+    /// everything else is ready at once. Ready sets are only ever added at
+    /// the end, so nothing already on screen shifts position (the review
+    /// counts sets by position).
+    @Published private var readyOrder: [UUID] = []
+
+    /// Sets that are ready and still have photos. A set whose photos were
+    /// all deleted drops out of the review and the chat's row.
     var visibleSets: [PhotoCluster] {
-        sets.filter { !photos(in: $0).isEmpty }
+        readyOrder.compactMap { id in sets.first { $0.id == id } }
+            .filter { !photos(in: $0).isEmpty }
     }
 
     /// Sets the user has marked as done. Only the user marks a set done —
@@ -66,12 +83,18 @@ final class ReviewSession: ObservableObject {
         deletedCount(in: set) > 0 && marked(in: set).isEmpty
     }
 
-    /// The set's current top pick: the best-ranked photo not yet deleted.
-    /// If the top pick is deleted, the ★ moves to the next best. It moves
-    /// only on an actual delete — not while photos are merely marked — so
-    /// it doesn't jump around while the user is still deciding.
+    /// The set's current top pick: the AI's pick if it judged the set,
+    /// otherwise the phone's best-ranked photo — either way, only if not
+    /// yet deleted. If the top pick is deleted, the ★ moves to the next best
+    /// in the phone's ranking. It moves only on an actual delete — not while
+    /// photos are merely marked — so it doesn't jump around while the user
+    /// is still deciding.
     func topPick(in set: PhotoCluster) -> PHAsset? {
-        set.ranked.map(\.asset).first { !deletedIDs.contains($0.localIdentifier) }
+        if let id = aiPicks[set.id], !deletedIDs.contains(id),
+           let pick = set.members.first(where: { $0.asset.localIdentifier == id }) {
+            return pick.asset
+        }
+        return set.ranked.map(\.asset).first { !deletedIDs.contains($0.localIdentifier) }
     }
 
     /// The set's photos still in the library: top pick first, then the rest
@@ -126,6 +149,95 @@ final class ReviewSession: ObservableObject {
             return "Couldn't delete those photos: \(error.localizedDescription)"
         }
     }
+
+    #if DEBUG
+    // MARK: Automatic AI judging (testing through OpenRouter)
+
+    /// What the AI said about each set it judged — shown in the review so
+    /// the developer can see its reasoning while testing.
+    @Published private(set) var aiNotes: [UUID: String] = [:]
+    /// Sets with people sent to the AI, and how many have come back.
+    @Published private(set) var aiTotal = 0
+    @Published private(set) var aiFinished = 0
+    @Published private(set) var aiSpent: Double = 0
+    /// Why judging didn't run at all (switched off, no key), if it didn't.
+    @Published private(set) var aiSkippedReason: String?
+
+    private var aiQueue: [(set: PhotoCluster, photos: [PHAsset])] = []
+    /// A few sets at a time: fast enough, without firing every request at once.
+    private let aiWorkers = 5
+
+    /// Sends every set with people to the AI, right after the scan (see the
+    /// brief: "Which sets the AI judges, and how many photos"). Only photos
+    /// that pass the phone's checks go — today, nobody's eyes closed — at
+    /// most the phone's top 10, in its ranking order, so photo 1 is always
+    /// the phone's ★. If fewer than 2 pass there's nothing to choose
+    /// between, so no AI call: the phone's pick stands. Sets without people
+    /// keep the phone's pick.
+    private func startJudging() {
+        guard AIJudgeSettings.isOn, let key = OpenRouterKey.load() else {
+            aiSkippedReason = AIJudgeSettings.isOn
+                ? "No OpenRouter key saved — add it in Ask AI."
+                : "AI judging is off (AI settings)."
+            readyOrder = sets.map(\.id)
+            return
+        }
+        aiQueue = sets.compactMap { set in
+            guard set.ranked.contains(where: { !$0.faceQualities.isEmpty }) else { return nil }
+            let passing = set.ranked.filter { ($0.blinkCheck?.blinking ?? 0) == 0 }.prefix(10).map(\.asset)
+            return passing.count >= 2 ? (set, Array(passing)) : nil
+        }
+        aiTotal = aiQueue.count
+        // Sets the AI won't judge are ready now; the rest join as they're judged.
+        let waiting = Set(aiQueue.map(\.set.id))
+        readyOrder = sets.map(\.id).filter { !waiting.contains($0) }
+        let model = AIJudgeSettings.model
+        for _ in 0..<min(aiWorkers, aiQueue.count) {
+            Task {
+                while !aiQueue.isEmpty {
+                    let job = aiQueue.removeFirst()
+                    await judge(job.set, photos: job.photos, model: model, key: key)
+                    aiFinished += 1
+                    readyOrder.append(job.set.id) // judged (or failed — phone's pick stands): show it
+                }
+            }
+        }
+    }
+
+    private func judge(_ set: PhotoCluster, photos: [PHAsset], model: String, key: String) async {
+        guard let prepared = await OpenRouterClient.prepareImages(photos, longestSide: 1024),
+              prepared.jpegs.count == photos.count else {
+            aiNotes[set.id] = "AI: couldn't load the photos (iCloud?) — phone's pick kept."
+            return
+        }
+        let outcome = await OpenRouterClient.ask(model: model, key: key, images: prepared.jpegs, preference: "")
+        switch outcome {
+        case .failed(let message):
+            aiNotes[set.id] = "AI failed — phone's pick kept. \(message)"
+        case .answered(let answer):
+            aiSpent += answer.cost ?? 0
+            guard let number = answer.photo, (1...photos.count).contains(number) else {
+                aiNotes[set.id] = "AI's answer couldn't be read — phone's pick kept. \(answer.reason)"
+                return
+            }
+            let name = model.split(separator: "/").last.map(String.init) ?? model
+            let verdict = number == 1 ? "kept the phone's ★" : "picked photo \(number) of \(photos.count) sent"
+            // Never move the ★ under someone who has already started on this
+            // set: a choice, a delete or "done" means they're deciding.
+            if isUntouched(set) {
+                aiPicks[set.id] = photos[number - 1].localIdentifier
+                aiNotes[set.id] = "AI (\(name)) \(verdict): \(answer.reason)"
+            } else {
+                aiNotes[set.id] = "AI (\(name)) \(verdict), not applied — you'd already started on this set. \(answer.reason)"
+            }
+        }
+    }
+
+    private func isUntouched(_ set: PhotoCluster) -> Bool {
+        deletedCount(in: set) == 0 && !isDone(set)
+            && !set.members.contains { choices[$0.asset.localIdentifier] != nil }
+    }
+    #endif
 
     /// JUDGMENT CALL: Apple has no documented way to read a photo's file
     /// size. This reads the "fileSize" value Photos keeps on each of a
@@ -239,6 +351,15 @@ struct ReviewView: View {
                         .foregroundStyle(.secondary)
                         .padding(.horizontal)
                         .padding(.top, 8)
+                    #if DEBUG
+                    // Testing only: what the AI said about this set.
+                    if let note = session.aiNotes[set.id] {
+                        Text(note)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal)
+                    }
+                    #endif
 
                     LazyVGrid(columns: Array(repeating: GridItem(.fixed(side), spacing: spacing), count: 3), spacing: spacing) {
                         ForEach(Array(photos.enumerated()), id: \.element.localIdentifier) { offset, asset in
