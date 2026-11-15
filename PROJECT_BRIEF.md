@@ -351,8 +351,10 @@ record, not unmerged work.
         the OpenRouter key already saved in the Keychain.
       - **Comparing models: a fixed list of messages,** like the 197 date phrases — every
         model gets the same messages and the replies are judged side by side (otherwise
-        each model gets a different conversation and the comparison isn't fair). Ask 3–5
-        friends what they'd type to build the list.
+        each model gets a different conversation and the comparison isn't fair). **Claude
+        Code drafts the list** (realistic requests, preferences, off-topic chat, attempts
+        to make the AI do things it can't); the developer reviews it and adds their own.
+        Asking friends was skipped (Nov 2026) — their effort is saved for testing the app.
       - **Over-promise check:** before any levers exist the AI can't actually do anything,
         so test whether it admits that or pretends — an early check of its instructions.
       - **Automatic judging of people sets — built and tested on device** (Nov 2026, Sep 26 –
@@ -363,7 +365,8 @@ record, not unmerged work.
         **Developer's read:** on this trip the AI acted as a failsafe, not a fixer — kept in
         the first pass for now, but its necessity there is an open question (one trip of
         mostly couple selfies after the blink fix may be an easy case; try trips with
-        groups, kids, candid shots). Its clearer value may be taste and preferences in the
+        groups, kids, candid shots — **deferred**, the developer doesn't have such photos to
+        hand yet). Its clearer value may be taste and preferences in the
         chat. Decision Log → "Which sets the AI judges"). Right after a scan,
         `ReviewSession` sends each set with people to the AI, 5 sets at a time: photos with
         nobody's eyes closed, at most the phone's top 10, at 1024px (shrunk to fit the
@@ -377,8 +380,9 @@ record, not unmerged work.
         judgment shows the set with the phone's pick. Fewer than 2 passing photos, a failed
         request or an unreadable answer → the phone's pick stands. All OpenRouter code now
         lives in `OpenRouterClient.swift` (the one file to swap for the relay). Testing
-        aids (debug only): "Picking the best shots… (2 of 5)" then model and cost under the
-        chat row; the AI's verdict and reason at the top of each set in the review; "AI
+        aids (debug only): under the chat row, "Still choosing the best shots…" (the
+        user-facing wording — no counts, which would raise "why only 11 of 28?") plus a
+        testing-only "4 of 11 sets with people judged", then model and cost; the AI's verdict and reason at the top of each set in the review; "AI
         settings" in the chat's Developer menu (🔧, top right; its screens open as sheets
         with Done — pushing them froze the chat on device, as before) to switch judging off (stand-in for declining AI
         consent) and pick the model (default Claude Haiku 5.5).
