@@ -100,7 +100,8 @@ The actual planned UX:
 - **Apple Developer Program ($99/yr)** — NOT needed yet. Only required later for TestFlight
   beta distribution or App Store submission. Free Apple ID is sufficient for building and
   testing on the developer's own device during development (7-day app expiry, reinstall as needed).
-- **Anthropic API account** — will be needed once we wire up the cloud AI step; not yet set up.
+- **Anthropic API account** — needed for the real AI step (next); not yet set up. Set a
+  monthly spending limit in the Anthropic Console.
 
 ## Status so far
 Everything checked off below is committed **and merged into `main`** on GitHub. Each
@@ -326,8 +327,12 @@ record, not unmerged work.
         include this OpenRouter tool (see checklist) — so the comparison there has to run
         through the real AI step. Both models are Anthropic's, so the relay can offer both
         (a hidden setting, or half the testers on each) without breaking "one AI company".
-      - Then build the app's AI step for the chosen model, behind the backend relay (first
-        task), from current Anthropic/provider docs — not from memory.
+      - **Next: build the app's real AI step, calling Anthropic directly for now** (decided
+        Nov 2026 — the relay waits until it's needed, before TestFlight). The Anthropic key
+        is pasted in once and kept in the phone's Keychain, through a debug-only screen, like
+        the OpenRouter test key. The network call lives in one small piece of code so
+        switching it to the relay later is a contained change. Built from current Anthropic
+        docs — not from memory. Needs an Anthropic API account (not set up yet).
 
 ## Before TestFlight / App Store (checklist)
 Items scattered through this brief that must be settled before anyone else uses the app.
@@ -467,8 +472,9 @@ Details live in the linked sections; this list is so none are missed.
   built into an app can be extracted, so the shipping app will call a small server of
   ours (e.g. a Cloudflare Worker / serverless function) that holds the key and forwards
   requests. The relay also needs abuse protection — Apple's App Attest to confirm requests
-  come from the real app, plus per-user rate limits. Planned as the first task of the
-  cloud AI milestone; required before TestFlight/App Store. For development on the
+  come from the real app, plus per-user rate limits. Required before TestFlight/App
+  Store — **built then, not before** (Nov 2026: originally planned as the first task of
+  the cloud AI milestone; moved later since only the developer's phone uses the app). For development on the
   developer's own phone only, a local, never-committed key is acceptable.
 - **The OpenRouter test key lives in the phone's Keychain, not in a project file (Nov 2026).**
   A git-ignored `Secrets.xcconfig` read at build time was suggested and declined: the
